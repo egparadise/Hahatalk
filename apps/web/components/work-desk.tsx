@@ -1,0 +1,882 @@
+"use client";
+
+import {
+  Bell,
+  CalendarDays,
+  Camera,
+  CheckCircle2,
+  FileText,
+  FolderOpen,
+  Image as ImageIcon,
+  Inbox,
+  LockKeyhole,
+  MessageCircle,
+  Mic2,
+  MonitorUp,
+  MoreHorizontal,
+  PanelRightOpen,
+  Paperclip,
+  Phone,
+  Plus,
+  Search,
+  Send,
+  Sparkles,
+  Users,
+  Video,
+  Volume2
+} from "lucide-react";
+import { type ChangeEvent, useMemo, useRef, useState } from "react";
+import {
+  buildReadReport,
+  characterPresets,
+  createMessageAudience,
+  demoAiJobs,
+  demoMessages,
+  demoRoom,
+  demoRoomMembers,
+  demoUsers,
+  getAudienceLabel,
+  isMessageVisibleTo,
+  type AiJob,
+  type Attachment,
+  type AudienceType,
+  type Message,
+  type User
+} from "@hahatalk/contracts";
+
+type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
+
+const reactions = ["확인", "완료", "질문", "긴급", "감사"];
+
+export function WorkDesk() {
+  const [isOnboarded, setIsOnboarded] = useState(false);
+  const [displayName, setDisplayName] = useState("이과장");
+  const [email, setEmail] = useState("manager@inviz.co.kr");
+  const [selectedCharacterId, setSelectedCharacterId] = useState(characterPresets[0]?.id ?? "");
+  const selectedCharacter = characterPresets.find((character) => character.id === selectedCharacterId) ?? characterPresets[0]!;
+
+  const currentUser: User = {
+    ...demoUsers[0]!,
+    displayName: displayName.trim() || "나",
+    email: email.trim() || demoUsers[0]!.email,
+    character: selectedCharacter
+  };
+  const users = [currentUser, ...demoUsers.slice(1)];
+
+  if (!isOnboarded) {
+    return (
+      <SignupFlow
+        displayName={displayName}
+        email={email}
+        selectedCharacterId={selectedCharacterId}
+        onDisplayNameChange={setDisplayName}
+        onEmailChange={setEmail}
+        onCharacterChange={setSelectedCharacterId}
+        onSubmit={() => setIsOnboarded(true)}
+      />
+    );
+  }
+
+  return <ChatDesk currentUser={currentUser} users={users} />;
+}
+
+function SignupFlow({
+  displayName,
+  email,
+  selectedCharacterId,
+  onDisplayNameChange,
+  onEmailChange,
+  onCharacterChange,
+  onSubmit
+}: {
+  displayName: string;
+  email: string;
+  selectedCharacterId: string;
+  onDisplayNameChange: (value: string) => void;
+  onEmailChange: (value: string) => void;
+  onCharacterChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <main className="auth-shell">
+      <section className="auth-panel" aria-label="가입">
+        <div className="brand-mark">인</div>
+        <h1>인비즈톡 가입</h1>
+        <p className="auth-copy">업무방, 문서, 읽음 확인, 초대 흐름을 한 화면에서 시작합니다.</p>
+        <div className="field-stack">
+          <label className="field">
+            이름
+            <input className="text-input" value={displayName} onChange={(event) => onDisplayNameChange(event.target.value)} />
+          </label>
+          <label className="field">
+            업무 이메일
+            <input className="text-input" type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} />
+          </label>
+        </div>
+
+        <h2 className="section-title" style={{ marginTop: 24, fontSize: 16 }}>
+          캐릭터 선택
+        </h2>
+        <div className="character-grid">
+          {characterPresets.map((character) => (
+            <button
+              className="character-card"
+              data-selected={character.id === selectedCharacterId}
+              key={character.id}
+              onClick={() => onCharacterChange(character.id)}
+              type="button"
+            >
+              <img alt="" src={character.thumbnailUrl} />
+              <strong>{character.name}</strong>
+            </button>
+          ))}
+        </div>
+        <button className="primary-button" onClick={onSubmit} type="button">
+          가입하고 업무방 입장
+        </button>
+      </section>
+      <section className="auth-preview" aria-label="업무 화면 미리보기">
+        <div className="desktop-preview">
+          <div className="preview-left">
+            <div className="workspace-name">INVIZ</div>
+            <div className="preview-room" />
+            <div className="preview-room" />
+            <div className="preview-room" />
+          </div>
+          <div className="preview-center">
+            <h2 className="room-title">프로젝트 A Smart Room</h2>
+            <div className="preview-message" />
+            <div className="preview-message" />
+            <div className="preview-message" />
+          </div>
+          <div className="preview-right">
+            <div className="panel-title">
+              <FileText size={17} /> PDF
+            </div>
+            <div className="preview-panel-line" />
+            <div className="preview-panel-line" />
+            <div className="preview-panel-line" />
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ChatDesk({ currentUser, users }: { currentUser: User; users: User[] }) {
+  const [messages, setMessages] = useState<Message[]>(demoMessages);
+  const [activePanel, setActivePanel] = useState<PanelKey>("files");
+  const [selectedMessageId, setSelectedMessageId] = useState(demoMessages[0]?.id ?? "");
+  const [audienceType, setAudienceType] = useState<AudienceType>("all");
+  const [targetUserIds, setTargetUserIds] = useState<string[]>(["user-mina"]);
+  const [composer, setComposer] = useState("");
+  const [requiresConfirmation, setRequiresConfirmation] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("customer@example.com");
+  const [notice, setNotice] = useState("외부 게스트는 초대받은 방과 파일만 볼 수 있습니다.");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => isMessageVisibleTo(message, currentUser.id, demoRoomMembers)),
+    [currentUser.id, messages]
+  );
+  const selectedMessage = messages.find((message) => message.id === selectedMessageId) ?? visibleMessages.at(-1) ?? messages[0]!;
+  const attachments = messages.flatMap((message) => message.attachments.map((attachment) => ({ attachment, message })));
+  const selectedPdf = attachments.find(({ attachment }) => attachment.mimeType === "application/pdf")?.attachment;
+
+  const targetUsers = users.filter((user) => user.id !== currentUser.id && !user.id.startsWith("guest"));
+
+  function sendTextMessage(body = composer) {
+    const trimmed = body.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    const message = createLocalMessage({
+      body: trimmed,
+      currentUser,
+      audienceType,
+      targetUserIds: audienceType === "all" ? [] : targetUserIds,
+      requiresConfirmation
+    });
+
+    setMessages((current) => [...current, message]);
+    setSelectedMessageId(message.id);
+    setComposer("");
+    setRequiresConfirmation(false);
+  }
+
+  function toggleTarget(userId: string) {
+    setTargetUserIds((current) => {
+      if (audienceType === "private") {
+        return [userId];
+      }
+
+      return current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId];
+    });
+  }
+
+  function changeAudience(nextAudienceType: AudienceType) {
+    setAudienceType(nextAudienceType);
+
+    if (nextAudienceType === "private") {
+      setTargetUserIds((current) => [current[0] ?? "user-mina"]);
+    }
+  }
+
+  function addReaction(reaction: string) {
+    setComposer((current) => (current ? `${current} ${reaction}` : reaction));
+  }
+
+  function createInvite() {
+    const email = inviteEmail.trim();
+
+    if (!email) {
+      return;
+    }
+
+    setNotice(`${email} 게스트 초대장이 준비되었습니다. 다운로드와 전달 권한은 제한됩니다.`);
+    setInviteEmail("");
+  }
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const id = `msg-file-${Date.now()}`;
+    const objectUrl = URL.createObjectURL(file);
+    const attachment: Attachment = {
+      id: `att-${Date.now()}`,
+      messageId: id,
+      uploaderId: currentUser.id,
+      storageKey: `local-demo/${file.name}`,
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+      previewStatus: "ready",
+      virusScanStatus: "clean",
+      createdAt: new Date().toISOString(),
+      objectUrl
+    };
+    const messageType = file.type.startsWith("image/")
+      ? "image"
+      : file.type.startsWith("video/")
+        ? "video"
+        : "file";
+    const message: Message = {
+      id,
+      roomId: demoRoom.id,
+      senderId: currentUser.id,
+      messageType,
+      body: `${file.name} 공유`,
+      metadata: { source: "file_upload" },
+      createdAt: new Date().toISOString(),
+      audiences: createMessageAudience(id, audienceType, currentUser.id, audienceType === "all" ? [] : targetUserIds),
+      reads: [{ messageId: id, userId: currentUser.id, readAt: new Date().toISOString() }],
+      attachments: [attachment]
+    };
+
+    setMessages((current) => [...current, message]);
+    setSelectedMessageId(message.id);
+    setActivePanel(file.type === "application/pdf" ? "pdf" : "files");
+    event.target.value = "";
+  }
+
+  async function shareScreenCapture() {
+    try {
+      const mediaDevices = navigator.mediaDevices as MediaDevices & {
+        getDisplayMedia?: (constraints?: DisplayMediaStreamOptions) => Promise<MediaStream>;
+      };
+
+      if (!mediaDevices.getDisplayMedia) {
+        setNotice("현재 브라우저는 화면 캡처 공유를 지원하지 않습니다.");
+        return;
+      }
+
+      const stream = await mediaDevices.getDisplayMedia({ video: true });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await video.play();
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      stream.getTracks().forEach((track) => track.stop());
+
+      if (!blob) {
+        setNotice("화면 캡처 이미지를 만들지 못했습니다.");
+        return;
+      }
+
+      const id = `msg-capture-${Date.now()}`;
+      const attachment: Attachment = {
+        id: `att-capture-${Date.now()}`,
+        messageId: id,
+        uploaderId: currentUser.id,
+        storageKey: `local-demo/screen-${Date.now()}.png`,
+        fileName: "화면캡처.png",
+        mimeType: "image/png",
+        sizeBytes: blob.size,
+        previewStatus: "ready",
+        virusScanStatus: "clean",
+        createdAt: new Date().toISOString(),
+        objectUrl: URL.createObjectURL(blob)
+      };
+      const message: Message = {
+        id,
+        roomId: demoRoom.id,
+        senderId: currentUser.id,
+        messageType: "image",
+        body: "현재 화면 캡처 공유",
+        metadata: { source: "screen_capture" },
+        createdAt: new Date().toISOString(),
+        audiences: createMessageAudience(id, audienceType, currentUser.id, audienceType === "all" ? [] : targetUserIds),
+        reads: [{ messageId: id, userId: currentUser.id, readAt: new Date().toISOString() }],
+        attachments: [attachment]
+      };
+
+      setMessages((current) => [...current, message]);
+      setSelectedMessageId(message.id);
+      setActivePanel("files");
+      setNotice("화면 캡처가 채팅에 공유되었습니다.");
+    } catch {
+      setNotice("화면 캡처 공유가 취소되었습니다.");
+    }
+  }
+
+  function popOut() {
+    window.open(window.location.href, "hahatalk-popout", "width=980,height=760");
+  }
+
+  return (
+    <main className="app-shell">
+      <nav className="rail" aria-label="주요 이동">
+        <div className="brand-mark">인</div>
+        <div className="rail-actions">
+          <button className="rail-button" data-active="true" title="채팅" type="button">
+            <MessageCircle size={21} />
+          </button>
+          <button className="rail-button" title="사람" type="button">
+            <Users size={21} />
+          </button>
+          <button className="rail-button" title="일정" type="button">
+            <CalendarDays size={21} />
+          </button>
+          <button className="rail-button" title="파일" type="button">
+            <FolderOpen size={21} />
+          </button>
+        </div>
+        <img className="avatar" alt="" src={currentUser.character.thumbnailUrl} />
+      </nav>
+
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <div className="workspace-name">INVIZ WORKSPACE</div>
+          <h2 className="section-title" style={{ marginTop: 4, fontSize: 22 }}>
+            인비즈톡
+          </h2>
+        </div>
+        <div className="sidebar-header">
+          <label className="search-box">
+            <Search size={16} />
+            <input className="text-input" placeholder="대화, 파일, 사람 검색" />
+          </label>
+        </div>
+        <div className="room-list">
+          <button className="room-item" data-active="true" type="button">
+            <strong>프로젝트 A Smart Room</strong>
+            <span className="room-meta">전체/선택/비공개 대화</span>
+          </button>
+          <button className="room-item" type="button">
+            <strong>고객지원 대기실</strong>
+            <span className="room-meta">게스트 안전 모드</span>
+          </button>
+          <button className="room-item" type="button">
+            <strong>영업자료 검토</strong>
+            <span className="room-meta">PDF와 읽음 확인</span>
+          </button>
+        </div>
+      </aside>
+
+      <section className="workspace" aria-label="채팅 업무 공간">
+        <header className="workspace-header">
+          <div>
+            <h1 className="room-title">{demoRoom.name}</h1>
+            <div className="tiny">멤버 {users.length}명 · 게스트 제한 · 읽음 리포트 켜짐</div>
+          </div>
+          <div className="header-actions">
+            <button className="icon-button" onClick={() => setNotice("음성통화는 LiveKit 연결 단계에서 활성화됩니다.")} title="음성통화" type="button">
+              <Phone size={18} />
+            </button>
+            <button className="icon-button" onClick={() => setNotice("화상통화는 LiveKit 방 생성 후 연결됩니다.")} title="화상통화" type="button">
+              <Video size={18} />
+            </button>
+            <button className="icon-button" onClick={popOut} title="개별 창 열기" type="button">
+              <PanelRightOpen size={18} />
+            </button>
+            <button className="icon-button" title="알림" type="button">
+              <Bell size={18} />
+            </button>
+          </div>
+        </header>
+
+        <div className="message-list" role="log">
+          {visibleMessages.map((message) => {
+            const sender = users.find((user) => user.id === message.senderId) ?? currentUser;
+            const readCount = message.reads.length;
+
+            return (
+              <article
+                className="message"
+                data-own={message.senderId === currentUser.id}
+                key={message.id}
+                onClick={() => setSelectedMessageId(message.id)}
+              >
+                <img className="avatar" alt="" src={sender.character.thumbnailUrl} />
+                <div className="message-bubble">
+                  <div className="message-meta">
+                    <strong>{sender.displayName}</strong>
+                    <span>{formatTime(message.createdAt)}</span>
+                    <span className="audience-chip">{getAudienceLabel(message, users)}</span>
+                    {message.metadata.requiresConfirmation ? <span className="status-chip">확인 요청</span> : null}
+                  </div>
+                  <p className="message-body">{message.body}</p>
+                  {message.attachments.length > 0 ? (
+                    <div className="attachment-strip">
+                      {message.attachments.map((attachment) => (
+                        <button
+                          className="attachment-tile"
+                          key={attachment.id}
+                          onClick={() => setActivePanel(attachment.mimeType === "application/pdf" ? "pdf" : "files")}
+                          type="button"
+                        >
+                          {attachment.mimeType.startsWith("image/") ? <ImageIcon size={21} /> : <FileText size={21} />}
+                          <span>
+                            <strong>{attachment.fileName}</strong>
+                            <span className="tiny">{formatBytes(attachment.sizeBytes)} · {attachment.previewStatus}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="message-actions" style={{ marginTop: 10 }}>
+                    <span className="tiny">읽음 {readCount}</span>
+                    <button className="secondary-button" onClick={() => setActivePanel("reads")} type="button">
+                      <CheckCircle2 size={16} /> 리포트
+                    </button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        <footer className="composer">
+          <div className="audience-tabs" aria-label="메시지 대상">
+            <button className="chip-button" data-active={audienceType === "all"} onClick={() => changeAudience("all")} type="button">
+              전체
+            </button>
+            <button className="chip-button" data-active={audienceType === "selected"} onClick={() => changeAudience("selected")} type="button">
+              선택
+            </button>
+            <button className="chip-button" data-active={audienceType === "private"} onClick={() => changeAudience("private")} type="button">
+              1:1
+            </button>
+            <span className="audience-chip">{audienceLabel(audienceType, targetUserIds, users)}</span>
+          </div>
+          {audienceType !== "all" ? (
+            <div className="target-list">
+              {targetUsers.map((user) => (
+                <button className="target-toggle" data-active={targetUserIds.includes(user.id)} key={user.id} onClick={() => toggleTarget(user.id)} type="button">
+                  <img className="avatar" alt="" src={user.character.thumbnailUrl} style={{ width: 22, height: 22 }} />
+                  {user.displayName}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="composer-tools">
+            <button className="icon-button" onClick={() => fileInputRef.current?.click()} title="파일 첨부" type="button">
+              <Paperclip size={18} />
+            </button>
+            <button className="icon-button" onClick={shareScreenCapture} title="화면 캡처 공유" type="button">
+              <Camera size={18} />
+            </button>
+            <button className="icon-button" onClick={() => setNotice("STT 음성메시지는 AI 작업 대기열로 들어갑니다.")} title="STT" type="button">
+              <Mic2 size={18} />
+            </button>
+            <button className="icon-button" onClick={() => setNotice("TTS 읽어주기는 캐시된 음성 자산을 우선 사용합니다.")} title="TTS" type="button">
+              <Volume2 size={18} />
+            </button>
+            <button className="chip-button" data-active={requiresConfirmation} onClick={() => setRequiresConfirmation((current) => !current)} type="button">
+              확인 요청
+            </button>
+            {reactions.map((reaction) => (
+              <button className="reaction-button" key={reaction} onClick={() => addReaction(reaction)} type="button">
+                {reaction}
+              </button>
+            ))}
+          </div>
+          <div className="composer-row">
+            <textarea
+              className="composer-input"
+              onChange={(event) => setComposer(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  sendTextMessage();
+                }
+              }}
+              placeholder="메시지 입력"
+              value={composer}
+            />
+            <button className="icon-button" onClick={() => sendTextMessage()} title="보내기" type="button">
+              <Send size={19} />
+            </button>
+          </div>
+          <input
+            hidden
+            onChange={handleFileChange}
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+          />
+        </footer>
+      </section>
+
+      <aside className="right-panel" aria-label="업무 패널">
+        <div className="panel-tabs">
+          <button className="panel-tab" data-active={activePanel === "files"} onClick={() => setActivePanel("files")} title="파일" type="button">
+            <FolderOpen size={18} />
+          </button>
+          <button className="panel-tab" data-active={activePanel === "pdf"} onClick={() => setActivePanel("pdf")} title="PDF" type="button">
+            <FileText size={18} />
+          </button>
+          <button className="panel-tab" data-active={activePanel === "reads"} onClick={() => setActivePanel("reads")} title="읽음" type="button">
+            <CheckCircle2 size={18} />
+          </button>
+          <button className="panel-tab" data-active={activePanel === "members"} onClick={() => setActivePanel("members")} title="참여자" type="button">
+            <Users size={18} />
+          </button>
+          <button className="panel-tab" data-active={activePanel === "ai"} onClick={() => setActivePanel("ai")} title="AI" type="button">
+            <Sparkles size={18} />
+          </button>
+          <button className="panel-tab" onClick={popOut} title="패널 팝업" type="button">
+            <MonitorUp size={18} />
+          </button>
+        </div>
+        <div className="panel-content">
+          <PanelBody
+            activePanel={activePanel}
+            attachments={attachments.map((item) => item.attachment)}
+            currentUser={currentUser}
+            inviteEmail={inviteEmail}
+            notice={notice}
+            onCreateInvite={createInvite}
+            onInviteEmailChange={setInviteEmail}
+            selectedMessage={selectedMessage}
+            selectedPdf={selectedPdf}
+            users={users}
+            aiJobs={demoAiJobs}
+          />
+        </div>
+      </aside>
+    </main>
+  );
+}
+
+function PanelBody({
+  activePanel,
+  attachments,
+  currentUser,
+  inviteEmail,
+  notice,
+  onCreateInvite,
+  onInviteEmailChange,
+  selectedMessage,
+  selectedPdf,
+  users,
+  aiJobs
+}: {
+  activePanel: PanelKey;
+  attachments: Attachment[];
+  currentUser: User;
+  inviteEmail: string;
+  notice: string;
+  onCreateInvite: () => void;
+  onInviteEmailChange: (value: string) => void;
+  selectedMessage: Message;
+  selectedPdf: Attachment | undefined;
+  users: User[];
+  aiJobs: AiJob[];
+}) {
+  if (activePanel === "reads") {
+    return <ReadPanel message={selectedMessage} users={users} />;
+  }
+
+  if (activePanel === "pdf") {
+    return <PdfPanel pdf={selectedPdf} />;
+  }
+
+  if (activePanel === "members") {
+    return (
+      <>
+        <div className="panel-section">
+          <h2 className="panel-title">
+            <Plus size={17} /> 대상 초대
+          </h2>
+          <label className="field">
+            이메일
+            <input className="text-input" value={inviteEmail} onChange={(event) => onInviteEmailChange(event.target.value)} />
+          </label>
+          <button className="primary-button" onClick={onCreateInvite} style={{ marginTop: 10 }} type="button">
+            게스트 초대
+          </button>
+        </div>
+        <div className="panel-section">
+          <h2 className="panel-title">
+            <Users size={17} /> 참여자
+          </h2>
+          {users.map((user) => (
+            <div className="member-row" key={user.id}>
+              <img alt="" src={user.character.thumbnailUrl} />
+              <span>
+                <strong>{user.displayName}</strong>
+                <span className="tiny" style={{ display: "block" }}>
+                  {user.email}
+                </span>
+              </span>
+              {user.id.startsWith("guest") ? <span className="guest-chip">게스트</span> : <span className="tiny">내부</span>}
+            </div>
+          ))}
+        </div>
+        <div className="notice">{notice}</div>
+      </>
+    );
+  }
+
+  if (activePanel === "ai") {
+    return (
+      <>
+        <div className="panel-section">
+          <h2 className="panel-title">
+            <Sparkles size={17} /> AI 작업 대기열
+          </h2>
+          {aiJobs.map((job) => (
+            <div className="ai-row" key={job.id}>
+              {job.jobType === "tts" ? <Volume2 size={18} /> : job.jobType === "stt" ? <Mic2 size={18} /> : <Sparkles size={18} />}
+              <span>
+                <strong>{job.jobType.toUpperCase()}</strong>
+                <span className="tiny" style={{ display: "block" }}>
+                  {job.createdAt}
+                </span>
+              </span>
+              <span className="status-chip">{job.status}</span>
+            </div>
+          ))}
+        </div>
+        <div className="panel-section">
+          <h2 className="panel-title">
+            <LockKeyhole size={17} /> 민감 기능
+          </h2>
+          <p className="panel-muted">녹화, 원격제어, AI transcript export는 동의와 감사 로그가 붙은 뒤 활성화됩니다.</p>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="panel-section">
+        <h2 className="panel-title">
+          <FolderOpen size={17} /> 파일
+        </h2>
+        {attachments.length === 0 ? (
+          <p className="panel-muted">공유된 파일이 없습니다.</p>
+        ) : (
+          attachments.map((attachment) => (
+            <div className="attachment-tile" key={attachment.id}>
+              {attachment.mimeType.startsWith("image/") ? <ImageIcon size={21} /> : <FileText size={21} />}
+              <span>
+                <strong>{attachment.fileName}</strong>
+                <span className="tiny">
+                  {formatBytes(attachment.sizeBytes)} · {attachment.virusScanStatus}
+                </span>
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="panel-section">
+        <h2 className="panel-title">
+          <Inbox size={17} /> 미리보기
+        </h2>
+        <AttachmentPreview attachment={attachments.at(-1)} />
+      </div>
+      <div className="notice">{notice}</div>
+    </>
+  );
+}
+
+function AttachmentPreview({ attachment }: { attachment: Attachment | undefined }) {
+  if (!attachment) {
+    return <div className="file-preview panel-muted">파일 없음</div>;
+  }
+
+  if (attachment.mimeType.startsWith("image/") && attachment.objectUrl) {
+    return (
+      <div className="file-preview">
+        <img alt={attachment.fileName} src={attachment.objectUrl} />
+      </div>
+    );
+  }
+
+  if (attachment.mimeType.startsWith("video/") && attachment.objectUrl) {
+    return (
+      <div className="file-preview">
+        <video controls src={attachment.objectUrl} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="file-preview">
+      <div style={{ textAlign: "center" }}>
+        <FileText size={34} />
+        <strong style={{ display: "block", marginTop: 8 }}>{attachment.fileName}</strong>
+        <span className="tiny">{attachment.mimeType}</span>
+      </div>
+    </div>
+  );
+}
+
+function PdfPanel({ pdf }: { pdf: Attachment | undefined }) {
+  return (
+    <>
+      <div className="panel-section">
+        <h2 className="panel-title">
+          <FileText size={17} /> PDF 문서
+        </h2>
+        <strong>{pdf?.fileName ?? "프로젝트A_제안서_v1.pdf"}</strong>
+        <p className="panel-muted">PDF.js 뷰어 연결 지점입니다. 업로드 PDF는 객체 URL로 표시하고, 서버 저장본은 서명 URL로 교체합니다.</p>
+      </div>
+      {pdf?.objectUrl ? (
+        <iframe className="file-preview" src={pdf.objectUrl} title={pdf.fileName} />
+      ) : (
+        <div className="pdf-pages">
+          <div className="pdf-page">
+            <strong>프로젝트 A 제안서</strong>
+            <div className="pdf-page-line" />
+            <div className="pdf-page-line" />
+            <div className="pdf-page-line" />
+          </div>
+          <div className="pdf-page">
+            <strong>범위와 일정</strong>
+            <div className="pdf-page-line" />
+            <div className="pdf-page-line" />
+            <div className="pdf-page-line" />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ReadPanel({ message, users }: { message: Message; users: User[] }) {
+  const report = buildReadReport(message, users);
+
+  return (
+    <>
+      <div className="panel-section">
+        <h2 className="panel-title">
+          <CheckCircle2 size={17} /> 읽음 리포트
+        </h2>
+        <p className="panel-muted">{message.body}</p>
+      </div>
+      <div className="panel-section">
+        {report.map((row) => (
+          <div className="read-row" key={row.user.id}>
+            <img alt="" src={row.user.character.thumbnailUrl} />
+            <span>
+              <strong>{row.user.displayName}</strong>
+              <span className="tiny" style={{ display: "block" }}>
+                {row.readAt ? formatTime(row.readAt) : "미읽음"}
+              </span>
+            </span>
+            {row.confirmedAt ? <span className="status-chip">확인</span> : row.readAt ? <span className="audience-chip">읽음</span> : <span className="guest-chip">대기</span>}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function createLocalMessage({
+  body,
+  currentUser,
+  audienceType,
+  targetUserIds,
+  requiresConfirmation
+}: {
+  body: string;
+  currentUser: User;
+  audienceType: AudienceType;
+  targetUserIds: string[];
+  requiresConfirmation: boolean;
+}): Message {
+  const id = `msg-local-${Date.now()}`;
+  const now = new Date().toISOString();
+
+  return {
+    id,
+    roomId: demoRoom.id,
+    senderId: currentUser.id,
+    messageType: "text",
+    body,
+    metadata: requiresConfirmation ? { requiresConfirmation: true } : {},
+    createdAt: now,
+    audiences: createMessageAudience(id, audienceType, currentUser.id, targetUserIds),
+    reads: [{ messageId: id, userId: currentUser.id, readAt: now }],
+    attachments: []
+  };
+}
+
+function audienceLabel(audienceType: AudienceType, targetUserIds: string[], users: User[]) {
+  if (audienceType === "all") {
+    return "전체";
+  }
+
+  const names = targetUserIds
+    .map((id) => users.find((user) => user.id === id)?.displayName)
+    .filter((name): name is string => Boolean(name));
+
+  if (audienceType === "private") {
+    return `${names[0] ?? "대상"}와 비공개`;
+  }
+
+  return `${names.length}명 선택`;
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function formatBytes(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${Math.round(size / 1024)} KB`;
+  }
+
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}

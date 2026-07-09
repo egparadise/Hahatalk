@@ -1,0 +1,32 @@
+{
+  "name": "hahatalk",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,green \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:desktop": "concurrently -n web,desktop -c green,magenta \"npm run dev -w apps/web\" \"wait-on http://127.0.0.1:3000 && npm run dev -w apps/desktop\"",
+    "build": "npm run build -w packages/contracts && npm run build -w apps/api && npm run build -w apps/web && npm run build -w apps/desktop",
+    "typecheck": "npm run typecheck -w packages/contracts && npm run typecheck -w apps/api && npm run typecheck -w apps/web && npm run typecheck -w apps/desktop",
+    "test": "npm run test -w packages/contracts",
+    "smoke": "node tools/harness/smoke.mjs",
+    "harness": "powershell -ExecutionPolicy Bypass -File tools/harness/hahatalk-harness.ps1",
+    "report:new": "powershell -ExecutionPolicy Bypass -File tools/harness/new-obsidian-report.ps1",
+    "dev:loop": "powershell -ExecutionPolicy Bypass -File tools/harness/development-loop.ps1",
+    "lint": "npm run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4",
+    "wait-on": "^8.0.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
+  }
+}

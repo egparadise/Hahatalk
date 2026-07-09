@@ -1,0 +1,14 @@
+{
+  "name": "@hahatalk/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "build": "node -c main.cjs && node -c preload.cjs",
+    "typecheck": "node -c main.cjs && node -c preload.cjs"
+  },
+  "devDependencies": {
+    "electron": "^43.1.0"
+  }
+}

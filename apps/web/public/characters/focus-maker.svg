@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="focus maker character">
+  <rect width="96" height="96" rx="18" fill="#fff5dc"/>
+  <circle cx="48" cy="36" r="18" fill="#e9b58e"/>
+  <path d="M30 32c4-14 14-22 29-17 7 3 11 9 9 19-10-6-22-7-38-2Z" fill="#5a3d2c"/>
+  <path d="M24 83c4-21 14-32 24-32s21 11 25 32H24Z" fill="#e1a325"/>
+  <path d="M40 58h17l-9 9-8-9Z" fill="#ffffff"/>
+  <rect x="35" y="33" width="10" height="6" rx="3" fill="none" stroke="#17201d" stroke-width="2"/>
+  <rect x="51" y="33" width="10" height="6" rx="3" fill="none" stroke="#17201d" stroke-width="2"/>
+  <path d="M45 36h6" stroke="#17201d" stroke-width="2"/>
+  <path d="M42 45c4 3 9 3 13 0" fill="none" stroke="#8a5238" stroke-width="3" stroke-linecap="round"/>
+</svg>
+
