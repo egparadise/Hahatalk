@@ -102,6 +102,23 @@ button:disabled {
   line-height: 1.6;
 }
 
+.auth-mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.auth-error {
+  border: 1px solid #efb4ad;
+  background: #fff0ee;
+  color: #8f2d24;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 8px 0 14px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .field-stack {
   display: grid;
   gap: 14px;
@@ -443,7 +460,8 @@ button:disabled {
 
 .audience-chip,
 .status-chip,
-.guest-chip {
+.guest-chip,
+.session-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -467,6 +485,12 @@ button:disabled {
 .guest-chip {
   background: #eef0ff;
   color: #3348b5;
+}
+
+.session-chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
 }
 
 .message-body {
@@ -738,4 +762,3 @@ button:disabled {
     padding: 12px;
   }
 }
-

@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReadReport,
+  createAuthSession,
   createMessageAudience,
   demoMessages,
+  demoRoom,
   demoRoomMembers,
   demoUsers,
+  findCharacterPreset,
   getAudienceLabel,
+  isValidEmail,
   isMessageVisibleTo
 } from "./index";
 
@@ -35,5 +39,20 @@ describe("Smart Room contracts", () => {
     expect(report.some((row) => row.state === "unread")).toBe(true);
     expect(report.some((row) => row.confirmedAt)).toBe(true);
   });
-});
 
+  it("validates onboarding email and character fallback", () => {
+    expect(isValidEmail(" Manager@Inviz.CO.KR ")).toBe(true);
+    expect(isValidEmail("manager")).toBe(false);
+    expect(findCharacterPreset("missing-character").id).toBe("char-calm-lead");
+  });
+
+  it("creates role-aware auth sessions for work and guest users", () => {
+    const memberSession = createAuthSession(demoUsers[0]!, "member", demoRoom.id, "2026-07-09T10:00:00+09:00");
+    const guestSession = createAuthSession(demoUsers[3]!, "guest", demoRoom.id, "2026-07-09T10:00:00+09:00");
+
+    expect(memberSession.permissions.canInviteGuests).toBe(true);
+    expect(memberSession.expiresAt).toBe("2026-07-09T09:00:00.000Z");
+    expect(guestSession.permissions.canDownloadFiles).toBe(false);
+    expect(guestSession.permissions.canOpenReadReport).toBe(false);
+  });
+});

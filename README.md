@@ -5,6 +5,7 @@ HahaTalk is a PC-first business messenger MVP for Inviz-style work communication
 ## What Runs Today
 
 - Signup/onboarding mock flow with character selection.
+- API-backed signup/login session flow for the first PC work desk entry.
 - Smart Room chat with `All`, `Selected`, and `Private` audience modes.
 - Internal and guest invite affordances with guest-safe permission labels.
 - File/photo/PDF/video metadata previews.

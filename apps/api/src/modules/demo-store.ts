@@ -1,6 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   buildReadReport,
+  createAuthSession,
   createMessageAudience,
   demoAiJobs,
   demoMessages,
@@ -8,9 +9,17 @@ import {
   demoRoom,
   demoRoomMembers,
   demoUsers,
+  findCharacterPreset,
+  isValidEmail,
+  normalizeEmail,
   type AudienceType,
+  type AuthSession,
   type Invite,
-  type Message
+  type LoginInput,
+  type Message,
+  type RoomMember,
+  type SignupInput,
+  type User
 } from "@hahatalk/contracts";
 
 interface SendMessageInput {
@@ -29,19 +38,70 @@ interface CreateInviteInput {
 
 @Injectable()
 export class DemoStore {
+  private readonly users: User[] = [...demoUsers];
+  private readonly roomMembers: RoomMember[] = [...demoRoomMembers];
   private readonly messages: Message[] = [...demoMessages];
   private readonly invites: Invite[] = [];
+  private readonly sessions: AuthSession[] = [];
 
   snapshot() {
     return {
       organization: demoOrganization,
       room: demoRoom,
-      users: demoUsers,
-      roomMembers: demoRoomMembers,
+      users: this.users,
+      roomMembers: this.roomMembers,
       messages: this.messages,
       aiJobs: demoAiJobs,
       invites: this.invites
     };
+  }
+
+  signup(input: SignupInput) {
+    const displayName = input.displayName.trim();
+    const email = normalizeEmail(input.email);
+
+    if (displayName.length < 2) {
+      throw new BadRequestException("displayName must be at least 2 characters.");
+    }
+
+    if (!isValidEmail(email)) {
+      throw new BadRequestException("email must be valid.");
+    }
+
+    const currentUser = this.users[0]!;
+    const user: User = {
+      ...currentUser,
+      displayName,
+      email,
+      status: "active",
+      character: findCharacterPreset(input.characterId),
+      lastSeenAt: new Date().toISOString()
+    };
+
+    this.users[0] = user;
+    const session = createAuthSession(user, this.getMemberRole(user.id), demoRoom.id);
+    this.sessions.push(session);
+
+    return session;
+  }
+
+  login(input: LoginInput) {
+    const email = normalizeEmail(input.email);
+
+    if (!isValidEmail(email)) {
+      throw new BadRequestException("email must be valid.");
+    }
+
+    const user = this.users.find((candidate) => normalizeEmail(candidate.email) === email);
+
+    if (!user) {
+      throw new NotFoundException("No HahaTalk user exists for this email.");
+    }
+
+    const session = createAuthSession(user, this.getMemberRole(user.id), demoRoom.id);
+    this.sessions.push(session);
+
+    return session;
   }
 
   sendMessage(input: SendMessageInput) {
@@ -86,6 +146,10 @@ export class DemoStore {
       return [];
     }
 
-    return buildReadReport(message, demoUsers);
+    return buildReadReport(message, this.users);
+  }
+
+  private getMemberRole(userId: string) {
+    return this.roomMembers.find((member) => member.userId === userId)?.role ?? "member";
   }
 }

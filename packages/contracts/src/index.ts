@@ -157,6 +157,32 @@ export interface AuditLog {
   createdAt: string;
 }
 
+export interface SignupInput {
+  displayName: string;
+  email: string;
+  characterId: string;
+  inviteCode?: string;
+}
+
+export interface LoginInput {
+  email: string;
+}
+
+export interface AuthSession {
+  token: string;
+  user: User;
+  roomId: string;
+  role: MemberRole;
+  permissions: {
+    canInviteGuests: boolean;
+    canUploadFiles: boolean;
+    canOpenReadReport: boolean;
+    canDownloadFiles: boolean;
+  };
+  createdAt: string;
+  expiresAt: string;
+}
+
 export const demoOrganization: Organization = {
   id: "org-inviz",
   name: "Inviz",
@@ -354,6 +380,45 @@ export const demoAiJobs: AiJob[] = [
     createdAt: "2026-07-09T10:10:00+09:00"
   }
 ];
+
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
+}
+
+export function findCharacterPreset(characterId: string): CharacterPreset {
+  return characterPresets.find((character) => character.id === characterId) ?? characterPresets[0]!;
+}
+
+export function createAuthSession(
+  user: User,
+  role: MemberRole,
+  roomId: string,
+  createdAt = new Date().toISOString()
+): AuthSession {
+  const expiresAt = new Date(createdAt);
+  expiresAt.setHours(expiresAt.getHours() + 8);
+
+  const isGuest = role === "guest";
+
+  return {
+    token: `demo-session-${user.id}-${Date.parse(createdAt) || Date.now()}`,
+    user,
+    roomId,
+    role,
+    permissions: {
+      canInviteGuests: !isGuest,
+      canUploadFiles: !isGuest,
+      canOpenReadReport: !isGuest,
+      canDownloadFiles: !isGuest
+    },
+    createdAt,
+    expiresAt: expiresAt.toISOString()
+  };
+}
 
 export function isMessageVisibleTo(message: Message, userId: string, members: RoomMember[]): boolean {
   const member = members.find((candidate) => candidate.userId === userId);

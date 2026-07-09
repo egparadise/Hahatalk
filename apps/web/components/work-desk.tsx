@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   Inbox,
   LockKeyhole,
+  LogOut,
   MessageCircle,
   Mic2,
   MonitorUp,
@@ -25,7 +26,7 @@ import {
   Video,
   Volume2
 } from "lucide-react";
-import { type ChangeEvent, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildReadReport,
   characterPresets,
@@ -37,6 +38,7 @@ import {
   demoUsers,
   getAudienceLabel,
   isMessageVisibleTo,
+  type AuthSession,
   type AiJob,
   type Attachment,
   type AudienceType,
@@ -45,96 +47,184 @@ import {
 } from "@hahatalk/contracts";
 
 type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
+type AuthMode = "signup" | "login";
 
 const reactions = ["확인", "완료", "질문", "긴급", "감사"];
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:4000";
+const authSessionStorageKey = "hahatalk.authSession.v1";
 
 export function WorkDesk() {
-  const [isOnboarded, setIsOnboarded] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>("signup");
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  const [authError, setAuthError] = useState("");
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
   const [displayName, setDisplayName] = useState("이과장");
-  const [email, setEmail] = useState("manager@inviz.co.kr");
+  const [email, setEmail] = useState("you@inviz.co.kr");
   const [selectedCharacterId, setSelectedCharacterId] = useState(characterPresets[0]?.id ?? "");
   const selectedCharacter = characterPresets.find((character) => character.id === selectedCharacterId) ?? characterPresets[0]!;
 
-  const currentUser: User = {
+  useEffect(() => {
+    const storedSession = readStoredSession();
+
+    if (!storedSession) {
+      return;
+    }
+
+    setAuthSession(storedSession);
+    setDisplayName(storedSession.user.displayName);
+    setEmail(storedSession.user.email);
+    setSelectedCharacterId(storedSession.user.character.id);
+  }, []);
+
+  const draftUser: User = {
     ...demoUsers[0]!,
     displayName: displayName.trim() || "나",
     email: email.trim() || demoUsers[0]!.email,
     character: selectedCharacter
   };
+  const currentUser = authSession?.user ?? draftUser;
   const users = [currentUser, ...demoUsers.slice(1)];
 
-  if (!isOnboarded) {
+  async function submitAuth() {
+    setAuthError("");
+    setIsSubmittingAuth(true);
+
+    try {
+      const session = await postJson<AuthSession>(
+        authMode === "signup" ? "/auth/signup" : "/auth/login",
+        authMode === "signup"
+          ? { displayName, email, characterId: selectedCharacterId }
+          : { email }
+      );
+
+      setAuthSession(session);
+      setDisplayName(session.user.displayName);
+      setEmail(session.user.email);
+      setSelectedCharacterId(session.user.character.id);
+      window.localStorage.setItem(authSessionStorageKey, JSON.stringify(session));
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "가입/로그인 처리 중 오류가 발생했습니다.");
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  }
+
+  function logout() {
+    window.localStorage.removeItem(authSessionStorageKey);
+    setAuthSession(null);
+    setAuthMode("login");
+  }
+
+  if (!authSession) {
     return (
       <SignupFlow
+        authMode={authMode}
         displayName={displayName}
         email={email}
+        error={authError}
+        isSubmitting={isSubmittingAuth}
         selectedCharacterId={selectedCharacterId}
+        onAuthModeChange={setAuthMode}
         onDisplayNameChange={setDisplayName}
         onEmailChange={setEmail}
         onCharacterChange={setSelectedCharacterId}
-        onSubmit={() => setIsOnboarded(true)}
+        onSubmit={submitAuth}
       />
     );
   }
 
-  return <ChatDesk currentUser={currentUser} users={users} />;
+  return <ChatDesk authSession={authSession} currentUser={currentUser} onLogout={logout} users={users} />;
 }
 
 function SignupFlow({
+  authMode,
   displayName,
   email,
+  error,
+  isSubmitting,
   selectedCharacterId,
+  onAuthModeChange,
   onDisplayNameChange,
   onEmailChange,
   onCharacterChange,
   onSubmit
 }: {
+  authMode: AuthMode;
   displayName: string;
   email: string;
+  error: string;
+  isSubmitting: boolean;
   selectedCharacterId: string;
+  onAuthModeChange: (value: AuthMode) => void;
   onDisplayNameChange: (value: string) => void;
   onEmailChange: (value: string) => void;
   onCharacterChange: (value: string) => void;
-  onSubmit: () => void;
+  onSubmit: () => Promise<void>;
 }) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void onSubmit();
+  }
+
   return (
     <main className="auth-shell">
-      <section className="auth-panel" aria-label="가입">
+      <form className="auth-panel" aria-label="가입 및 로그인" onSubmit={handleSubmit}>
         <div className="brand-mark">인</div>
-        <h1>인비즈톡 가입</h1>
-        <p className="auth-copy">업무방, 문서, 읽음 확인, 초대 흐름을 한 화면에서 시작합니다.</p>
+        <h1>{authMode === "signup" ? "인비즈톡 가입" : "인비즈톡 로그인"}</h1>
+        <p className="auth-copy">
+          {authMode === "signup" ? "업무 프로필과 캐릭터를 정하고 바로 Smart Room에 입장합니다." : "업무 이메일로 내 세션을 다시 엽니다."}
+        </p>
+        <div className="auth-mode-tabs" aria-label="인증 모드">
+          <button className="chip-button" data-active={authMode === "signup"} onClick={() => onAuthModeChange("signup")} type="button">
+            가입하기
+          </button>
+          <button className="chip-button" data-active={authMode === "login"} onClick={() => onAuthModeChange("login")} type="button">
+            로그인
+          </button>
+        </div>
         <div className="field-stack">
-          <label className="field">
-            이름
-            <input className="text-input" value={displayName} onChange={(event) => onDisplayNameChange(event.target.value)} />
-          </label>
+          {authMode === "signup" ? (
+            <label className="field">
+              이름
+              <input className="text-input" minLength={2} required value={displayName} onChange={(event) => onDisplayNameChange(event.target.value)} />
+            </label>
+          ) : null}
           <label className="field">
             업무 이메일
-            <input className="text-input" type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} />
+            <input className="text-input" required type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} />
           </label>
         </div>
 
-        <h2 className="section-title" style={{ marginTop: 24, fontSize: 16 }}>
-          캐릭터 선택
-        </h2>
-        <div className="character-grid">
-          {characterPresets.map((character) => (
-            <button
-              className="character-card"
-              data-selected={character.id === selectedCharacterId}
-              key={character.id}
-              onClick={() => onCharacterChange(character.id)}
-              type="button"
-            >
-              <img alt="" src={character.thumbnailUrl} />
-              <strong>{character.name}</strong>
-            </button>
-          ))}
-        </div>
-        <button className="primary-button" onClick={onSubmit} type="button">
-          가입하고 업무방 입장
+        {authMode === "signup" ? (
+          <>
+            <h2 className="section-title" style={{ marginTop: 24, fontSize: 16 }}>
+              캐릭터 선택
+            </h2>
+            <div className="character-grid">
+              {characterPresets.map((character) => (
+                <button
+                  className="character-card"
+                  data-selected={character.id === selectedCharacterId}
+                  key={character.id}
+                  onClick={() => onCharacterChange(character.id)}
+                  type="button"
+                >
+                  <img alt="" src={character.thumbnailUrl} />
+                  <strong>{character.name}</strong>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
+        {error ? (
+          <div className="auth-error" role="alert">
+            {error}
+          </div>
+        ) : null}
+        <button className="primary-button" disabled={isSubmitting} type="submit">
+          {isSubmitting ? "처리 중" : authMode === "signup" ? "가입하고 업무방 입장" : "로그인하고 입장"}
         </button>
-      </section>
+      </form>
       <section className="auth-preview" aria-label="업무 화면 미리보기">
         <div className="desktop-preview">
           <div className="preview-left">
@@ -163,7 +253,17 @@ function SignupFlow({
   );
 }
 
-function ChatDesk({ currentUser, users }: { currentUser: User; users: User[] }) {
+function ChatDesk({
+  authSession,
+  currentUser,
+  onLogout,
+  users
+}: {
+  authSession: AuthSession;
+  currentUser: User;
+  onLogout: () => void;
+  users: User[];
+}) {
   const [messages, setMessages] = useState<Message[]>(demoMessages);
   const [activePanel, setActivePanel] = useState<PanelKey>("files");
   const [selectedMessageId, setSelectedMessageId] = useState(demoMessages[0]?.id ?? "");
@@ -408,9 +508,10 @@ function ChatDesk({ currentUser, users }: { currentUser: User; users: User[] }) 
         <header className="workspace-header">
           <div>
             <h1 className="room-title">{demoRoom.name}</h1>
-            <div className="tiny">멤버 {users.length}명 · 게스트 제한 · 읽음 리포트 켜짐</div>
+            <div className="tiny">멤버 {users.length}명 · {authSession.role === "guest" ? "게스트 세션" : "내부 세션"} · 읽음 리포트 켜짐</div>
           </div>
           <div className="header-actions">
+            <span className="session-chip">{currentUser.displayName}</span>
             <button className="icon-button" onClick={() => setNotice("음성통화는 LiveKit 연결 단계에서 활성화됩니다.")} title="음성통화" type="button">
               <Phone size={18} />
             </button>
@@ -422,6 +523,9 @@ function ChatDesk({ currentUser, users }: { currentUser: User; users: User[] }) 
             </button>
             <button className="icon-button" title="알림" type="button">
               <Bell size={18} />
+            </button>
+            <button className="icon-button" onClick={onLogout} title="로그아웃" type="button">
+              <LogOut size={18} />
             </button>
           </div>
         </header>
@@ -879,4 +983,53 @@ function formatBytes(size: number) {
   }
 
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function readStoredSession() {
+  try {
+    const rawSession = window.localStorage.getItem(authSessionStorageKey);
+
+    if (!rawSession) {
+      return null;
+    }
+
+    const session = JSON.parse(rawSession) as AuthSession;
+
+    if (new Date(session.expiresAt).getTime() <= Date.now()) {
+      window.localStorage.removeItem(authSessionStorageKey);
+      return null;
+    }
+
+    return session;
+  } catch {
+    window.localStorage.removeItem(authSessionStorageKey);
+    return null;
+  }
+}
+
+async function postJson<TResponse>(path: string, payload: Record<string, unknown>): Promise<TResponse> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+
+  return response.json() as Promise<TResponse>;
+}
+
+async function readApiError(response: Response) {
+  try {
+    const body = await response.json() as { message?: string | string[]; error?: string };
+    const message = Array.isArray(body.message) ? body.message.join(" ") : body.message;
+
+    return message ?? body.error ?? `요청 실패 (${response.status})`;
+  } catch {
+    return `요청 실패 (${response.status})`;
+  }
 }

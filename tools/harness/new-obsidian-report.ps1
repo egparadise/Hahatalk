@@ -58,8 +58,8 @@ $Goal
 
 ## Canonical Paths
 
-- Code root: `$codeRoot`
-- Obsidian root: `$ObsidianRoot`
+- Code root: $codeRoot
+- Obsidian root: $ObsidianRoot
 - Git remote: `https://github.com/egparadise/Hahatalk.git`
 
 ## Files Changed
