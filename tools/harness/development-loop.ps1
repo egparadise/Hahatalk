@@ -81,31 +81,31 @@ function Invoke-LoggedCommand {
   $commandText = "$Executable $($Arguments -join ' ')"
   Add-ReportSection -Title "Command: $Label" -Lines @('```powershell', $commandText, '```')
 
-  $stdoutPath = [System.IO.Path]::GetTempFileName()
-  $stderrPath = [System.IO.Path]::GetTempFileName()
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo.FileName = $Executable
+  $process.StartInfo.Arguments = Join-ProcessArguments -Arguments $Arguments
+  $process.StartInfo.RedirectStandardOutput = $true
+  $process.StartInfo.RedirectStandardError = $true
+  $process.StartInfo.UseShellExecute = $false
+  $process.StartInfo.CreateNoWindow = $true
+
+  [void]$process.Start()
+  $stdoutText = $process.StandardOutput.ReadToEnd()
+  $stderrText = $process.StandardError.ReadToEnd()
+  $process.WaitForExit()
+  $exitCode = $process.ExitCode
+
   $outputLines = @()
-  $previousErrorActionPreference = $ErrorActionPreference
-  $ErrorActionPreference = "Continue"
-  try {
-    & $Executable @Arguments > $stdoutPath 2> $stderrPath
-    $exitCode = $LASTEXITCODE
 
-    $stdoutText = Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue
-    $stderrText = Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue
-
-    if (![string]::IsNullOrWhiteSpace($stdoutText)) {
-      $outputLines += ($stdoutText.TrimEnd() -split "\r?\n")
-    }
-
-    if (![string]::IsNullOrWhiteSpace($stderrText)) {
-      $outputLines += "[stderr]"
-      $outputLines += ($stderrText.TrimEnd() -split "\r?\n")
-    }
+  if (![string]::IsNullOrWhiteSpace($stdoutText)) {
+    $outputLines += ($stdoutText.TrimEnd() -split "\r?\n")
   }
-  finally {
-    $ErrorActionPreference = $previousErrorActionPreference
-    Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+
+  if (![string]::IsNullOrWhiteSpace($stderrText)) {
+    $outputLines += "[stderr]"
+    $outputLines += ($stderrText.TrimEnd() -split "\r?\n")
   }
+
   $trimmedOutput = ($outputLines | Select-Object -Last 80) -join [Environment]::NewLine
 
   Add-ReportSection -Title "Result: $Label" -Lines @(
@@ -118,8 +118,27 @@ function Invoke-LoggedCommand {
   if ($exitCode -ne 0) {
     throw "$Label failed with exit code $exitCode"
   }
+}
 
-  return $outputLines
+function Join-ProcessArguments {
+  param([string[]]$Arguments)
+
+  $escapedArguments = foreach ($item in $Arguments) {
+    $argument = [string]$item
+    if ($argument.Length -eq 0) {
+      '""'
+      continue
+    }
+
+    if ($argument -notmatch '[\s"]') {
+      $argument
+      continue
+    }
+
+    '"' + ($argument -replace '"', '\"') + '"'
+  }
+
+  return ($escapedArguments -join " ")
 }
 
 $codeRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
