@@ -182,6 +182,16 @@ export interface CreateInviteInput {
   invitedBy: string;
 }
 
+export interface CreateAttachmentMessageInput {
+  uploaderId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  audienceType: AudienceType;
+  targetUserIds: string[];
+  source: "file_upload" | "screen_capture";
+}
+
 export interface AuthSession {
   token: string;
   user: User;
@@ -442,6 +452,23 @@ export function createAuthSession(
     createdAt,
     expiresAt: expiresAt.toISOString()
   };
+}
+
+export function getMessageTypeForMime(mimeType: string): MessageType {
+  if (mimeType.startsWith("image/")) {
+    return "image";
+  }
+
+  if (mimeType.startsWith("video/")) {
+    return "video";
+  }
+
+  return "file";
+}
+
+export function createDemoStorageKey(fileName: string, createdAt = new Date().toISOString()): string {
+  const safeName = fileName.trim().toLowerCase().replace(/[^a-z0-9가-힣._-]+/g, "-").replace(/^-+|-+$/g, "") || "attachment";
+  return `demo/${Date.parse(createdAt) || Date.now()}-${safeName}`;
 }
 
 export function isMessageVisibleTo(message: Message, userId: string, members: RoomMember[]): boolean {

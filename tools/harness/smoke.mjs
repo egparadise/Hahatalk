@@ -23,6 +23,8 @@ const requiredTerms = [
   "MvpSnapshot",
   "POST /messages",
   "POST /invites",
+  "POST /attachments",
+  "CreateAttachmentMessageInput",
   "AI 작업",
   "화면 캡처"
 ];

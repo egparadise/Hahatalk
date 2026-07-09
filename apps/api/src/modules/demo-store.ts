@@ -10,6 +10,8 @@ import {
   demoRoomMembers,
   demoUsers,
   findCharacterPreset,
+  createDemoStorageKey,
+  getMessageTypeForMime,
   isValidEmail,
   normalizeEmail,
   type AudienceType,
@@ -19,6 +21,7 @@ import {
   type MvpSnapshot,
   type RoomMember,
   type CreateInviteInput,
+  type CreateAttachmentMessageInput,
   type Invite,
   type SendMessageInput,
   type SignupInput,
@@ -138,6 +141,51 @@ export class DemoStore {
 
     this.invites.push(invite);
     return invite;
+  }
+
+  createAttachmentMessage(input: CreateAttachmentMessageInput) {
+    const fileName = input.fileName.trim();
+    const mimeType = input.mimeType.trim() || "application/octet-stream";
+
+    if (!fileName) {
+      throw new BadRequestException("fileName must not be empty.");
+    }
+
+    if (!Number.isFinite(input.sizeBytes) || input.sizeBytes <= 0) {
+      throw new BadRequestException("sizeBytes must be greater than 0.");
+    }
+
+    const id = `msg-attachment-${Date.now()}`;
+    const attachmentId = `att-${Date.now()}`;
+    const now = new Date().toISOString();
+    const messageType = getMessageTypeForMime(mimeType);
+    const attachment = {
+      id: attachmentId,
+      messageId: id,
+      uploaderId: input.uploaderId,
+      storageKey: createDemoStorageKey(fileName, now),
+      fileName,
+      mimeType,
+      sizeBytes: input.sizeBytes,
+      previewStatus: "ready" as const,
+      virusScanStatus: "clean" as const,
+      createdAt: now
+    };
+    const message: Message = {
+      id,
+      roomId: demoRoom.id,
+      senderId: input.uploaderId,
+      messageType,
+      body: input.source === "screen_capture" ? "현재 화면 캡처 공유" : `${fileName} 공유`,
+      metadata: { source: input.source },
+      createdAt: now,
+      audiences: createMessageAudience(id, input.audienceType, input.uploaderId, input.targetUserIds),
+      reads: [{ messageId: id, userId: input.uploaderId, readAt: now }],
+      attachments: [attachment]
+    };
+
+    this.messages.push(message);
+    return message;
   }
 
   readReport(messageId: string) {

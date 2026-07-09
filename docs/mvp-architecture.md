@@ -12,6 +12,7 @@
 - Chat send must stay fast and never wait for AI, STT, TTS, file preview, or video work.
 - Signup/login creates a short-lived demo `AuthSession` before entering the work desk.
 - The web work desk reads `MvpSnapshot` from the API and writes messages/invites through `POST /messages` and `POST /invites`.
+- File, image, PDF, video, and screen capture shares write attachment metadata through `POST /attachments`; binary originals remain a future S3/MinIO signed upload flow.
 - Message visibility is determined by `message_audiences`.
 - Read reports are sensitive work data and should be guarded by room membership checks in the API layer.
 - File originals belong in S3-compatible storage or MinIO. PostgreSQL stores metadata only.

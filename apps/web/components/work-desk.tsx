@@ -285,6 +285,7 @@ function ChatDesk({
   const [syncError, setSyncError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -424,7 +425,7 @@ function ChatDesk({
     }
   }
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
     if (!file) {
@@ -468,6 +469,30 @@ function ChatDesk({
     setSelectedMessageId(message.id);
     setActivePanel(file.type === "application/pdf" ? "pdf" : "files");
     event.target.value = "";
+
+    setIsUploading(true);
+    try {
+      const savedMessage = await postJson<Message>("/attachments", {
+        uploaderId: currentUser.id,
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        audienceType,
+        targetUserIds: audienceType === "all" ? [] : targetUserIds,
+        source: "file_upload"
+      });
+      const messageWithPreview = attachPreviewUrl(savedMessage, objectUrl);
+
+      setMessages((current) => current.map((candidate) => candidate.id === message.id ? messageWithPreview : candidate));
+      setSelectedMessageId(savedMessage.id);
+      setNotice(`${file.name} 메타데이터가 서버에 저장되었습니다.`);
+    } catch (error) {
+      URL.revokeObjectURL(objectUrl);
+      setMessages((current) => current.filter((candidate) => candidate.id !== message.id));
+      setNotice(`파일 메타데이터 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsUploading(false);
+    }
   }
 
   async function shareScreenCapture() {
@@ -529,7 +554,29 @@ function ChatDesk({
       setMessages((current) => [...current, message]);
       setSelectedMessageId(message.id);
       setActivePanel("files");
-      setNotice("화면 캡처가 채팅에 공유되었습니다.");
+      setIsUploading(true);
+      try {
+        const savedMessage = await postJson<Message>("/attachments", {
+          uploaderId: currentUser.id,
+          fileName: "화면캡처.png",
+          mimeType: "image/png",
+          sizeBytes: blob.size,
+          audienceType,
+          targetUserIds: audienceType === "all" ? [] : targetUserIds,
+          source: "screen_capture"
+        });
+        const messageWithPreview = attachPreviewUrl(savedMessage, attachment.objectUrl!);
+
+        setMessages((current) => current.map((candidate) => candidate.id === message.id ? messageWithPreview : candidate));
+        setSelectedMessageId(savedMessage.id);
+        setNotice("화면 캡처 메타데이터가 서버에 저장되었습니다.");
+      } catch (error) {
+        URL.revokeObjectURL(attachment.objectUrl!);
+        setMessages((current) => current.filter((candidate) => candidate.id !== message.id));
+        setNotice(`화면 캡처 메타데이터 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+      } finally {
+        setIsUploading(false);
+      }
     } catch {
       setNotice("화면 캡처 공유가 취소되었습니다.");
     }
@@ -696,10 +743,10 @@ function ChatDesk({
             </div>
           ) : null}
           <div className="composer-tools">
-            <button className="icon-button" onClick={() => fileInputRef.current?.click()} title="파일 첨부" type="button">
+            <button className="icon-button" disabled={isUploading} onClick={() => fileInputRef.current?.click()} title="파일 첨부" type="button">
               <Paperclip size={18} />
             </button>
-            <button className="icon-button" onClick={shareScreenCapture} title="화면 캡처 공유" type="button">
+            <button className="icon-button" disabled={isUploading} onClick={shareScreenCapture} title="화면 캡처 공유" type="button">
               <Camera size={18} />
             </button>
             <button className="icon-button" onClick={() => setNotice("STT 음성메시지는 AI 작업 대기열로 들어갑니다.")} title="STT" type="button">
@@ -1159,6 +1206,13 @@ function mergeCurrentUser(users: User[], currentUser: User) {
   }
 
   return [currentUser, ...mergedUsers];
+}
+
+function attachPreviewUrl(message: Message, objectUrl: string): Message {
+  return {
+    ...message,
+    attachments: message.attachments.map((attachment, index) => index === 0 ? { ...attachment, objectUrl } : attachment)
+  };
 }
 
 async function readApiError(response: Response) {

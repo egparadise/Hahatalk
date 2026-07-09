@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Inject, Param, Post } from "@nestjs/common";
-import { type AudienceType, type CreateInviteInput, type SendMessageInput } from "@hahatalk/contracts";
-import { IsEmail, IsIn, IsOptional, IsString, MinLength } from "class-validator";
+import { type AudienceType, type CreateAttachmentMessageInput, type CreateInviteInput, type SendMessageInput } from "@hahatalk/contracts";
+import { IsEmail, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from "class-validator";
 import { DemoStore } from "./demo-store.js";
 
 class SendMessageDto {
@@ -28,6 +28,30 @@ class CreateInviteDto {
 
   @IsString()
   invitedBy = "user-you";
+}
+
+class CreateAttachmentMessageDto {
+  @IsString()
+  uploaderId = "user-you";
+
+  @IsString()
+  @MinLength(1)
+  fileName = "";
+
+  @IsString()
+  mimeType = "application/octet-stream";
+
+  @IsNumber()
+  @Min(1)
+  sizeBytes = 0;
+
+  @IsIn(["all", "selected", "private", "role"])
+  audienceType: AudienceType = "all";
+
+  targetUserIds: string[] = [];
+
+  @IsIn(["file_upload", "screen_capture"])
+  source: "file_upload" | "screen_capture" = "file_upload";
 }
 
 class SignupDto {
@@ -92,5 +116,10 @@ export class ChatController {
   @Post("invites")
   createInvite(@Body() body: CreateInviteDto) {
     return this.store.createInvite(body as CreateInviteInput);
+  }
+
+  @Post("attachments")
+  createAttachmentMessage(@Body() body: CreateAttachmentMessageDto) {
+    return this.store.createAttachmentMessage(body as CreateAttachmentMessageInput);
   }
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildReadReport,
   createAuthSession,
+  createDemoStorageKey,
   createMessageAudience,
   demoAiJobs,
   demoOrganization,
@@ -10,6 +11,7 @@ import {
   demoRoomMembers,
   demoUsers,
   findCharacterPreset,
+  getMessageTypeForMime,
   getAudienceLabel,
   isValidEmail,
   isMessageVisibleTo
@@ -72,5 +74,12 @@ describe("Smart Room contracts", () => {
     expect(snapshot.messages.length).toBeGreaterThan(0);
     expect(snapshot.roomMembers.some((member) => member.role === "guest")).toBe(true);
     expect(snapshot.invites).toHaveLength(0);
+  });
+
+  it("maps attachment mime types and storage keys for metadata-only upload", () => {
+    expect(getMessageTypeForMime("image/png")).toBe("image");
+    expect(getMessageTypeForMime("video/mp4")).toBe("video");
+    expect(getMessageTypeForMime("application/pdf")).toBe("file");
+    expect(createDemoStorageKey("Proposal V1.pdf", "2026-07-09T10:00:00+09:00")).toContain("proposal-v1.pdf");
   });
 });
