@@ -79,31 +79,47 @@ function Invoke-LoggedCommand {
   )
 
   $commandText = "$Executable $($Arguments -join ' ')"
-  Add-ReportSection -Title "Command: $Label" -Lines @("````powershell", $commandText, "````")
+  Add-ReportSection -Title "Command: $Label" -Lines @('```powershell', $commandText, '```')
 
+  $stdoutPath = [System.IO.Path]::GetTempFileName()
+  $stderrPath = [System.IO.Path]::GetTempFileName()
+  $outputLines = @()
   $previousErrorActionPreference = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
   try {
-    $output = & $Executable @Arguments 2>&1
+    & $Executable @Arguments > $stdoutPath 2> $stderrPath
     $exitCode = $LASTEXITCODE
+
+    $stdoutText = Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue
+    $stderrText = Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue
+
+    if (![string]::IsNullOrWhiteSpace($stdoutText)) {
+      $outputLines += ($stdoutText.TrimEnd() -split "\r?\n")
+    }
+
+    if (![string]::IsNullOrWhiteSpace($stderrText)) {
+      $outputLines += "[stderr]"
+      $outputLines += ($stderrText.TrimEnd() -split "\r?\n")
+    }
   }
   finally {
     $ErrorActionPreference = $previousErrorActionPreference
+    Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
   }
-  $trimmedOutput = ($output | Select-Object -Last 80) -join [Environment]::NewLine
+  $trimmedOutput = ($outputLines | Select-Object -Last 80) -join [Environment]::NewLine
 
   Add-ReportSection -Title "Result: $Label" -Lines @(
     "- Exit code: $exitCode",
-    "````text",
+    '```text',
     $trimmedOutput,
-    "````"
+    '```'
   )
 
   if ($exitCode -ne 0) {
     throw "$Label failed with exit code $exitCode"
   }
 
-  return $output
+  return $outputLines
 }
 
 $codeRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
@@ -155,7 +171,7 @@ elseif ($originUrl -ne $RemoteUrl) {
 }
 
 $statusBefore = & git status --short
-Add-ReportSection -Title "Git Status Before Verification" -Lines @("````text", (($statusBefore | Out-String).Trim()), "````")
+Add-ReportSection -Title "Git Status Before Verification" -Lines @('```text', (($statusBefore | Out-String).Trim()), '```')
 
 Invoke-LoggedCommand -Label "HahaTalk harness" -Executable "powershell" -Arguments @(
   "-ExecutionPolicy",
@@ -177,7 +193,7 @@ if ($Commit) {
 
   Invoke-LoggedCommand -Label "git add" -Executable "git" -Arguments @("add", "-A")
   $staged = & git status --short
-  Add-ReportSection -Title "Staged Files" -Lines @("````text", (($staged | Out-String).Trim()), "````")
+  Add-ReportSection -Title "Staged Files" -Lines @('```text', (($staged | Out-String).Trim()), '```')
 
   if ([string]::IsNullOrWhiteSpace((($staged | Out-String).Trim()))) {
     Add-ReportSection -Title "Commit Result" -Lines @("- No changes to commit.")
