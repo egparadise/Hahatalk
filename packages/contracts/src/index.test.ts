@@ -3,6 +3,8 @@ import {
   buildReadReport,
   createAuthSession,
   createMessageAudience,
+  demoAiJobs,
+  demoOrganization,
   demoMessages,
   demoRoom,
   demoRoomMembers,
@@ -54,5 +56,21 @@ describe("Smart Room contracts", () => {
     expect(memberSession.expiresAt).toBe("2026-07-09T09:00:00.000Z");
     expect(guestSession.permissions.canDownloadFiles).toBe(false);
     expect(guestSession.permissions.canOpenReadReport).toBe(false);
+  });
+
+  it("keeps the MVP snapshot shape explicit", () => {
+    const snapshot = {
+      organization: demoOrganization,
+      room: demoRoom,
+      users: demoUsers,
+      roomMembers: demoRoomMembers,
+      messages: demoMessages,
+      aiJobs: demoAiJobs,
+      invites: []
+    };
+
+    expect(snapshot.messages.length).toBeGreaterThan(0);
+    expect(snapshot.roomMembers.some((member) => member.role === "guest")).toBe(true);
+    expect(snapshot.invites).toHaveLength(0);
   });
 });

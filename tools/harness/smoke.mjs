@@ -20,6 +20,9 @@ const requiredTerms = [
   "auth/signup",
   "auth/login",
   "AuthSession",
+  "MvpSnapshot",
+  "POST /messages",
+  "POST /invites",
   "AI 작업",
   "화면 캡처"
 ];

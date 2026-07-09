@@ -19,6 +19,7 @@ import {
   Paperclip,
   Phone,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Sparkles,
@@ -42,7 +43,10 @@ import {
   type AiJob,
   type Attachment,
   type AudienceType,
+  type Invite,
   type Message,
+  type MvpSnapshot,
+  type RoomMember,
   type User
 } from "@hahatalk/contracts";
 
@@ -264,7 +268,11 @@ function ChatDesk({
   onLogout: () => void;
   users: User[];
 }) {
+  const [roomUsers, setRoomUsers] = useState<User[]>(users);
+  const [roomMembers, setRoomMembers] = useState<RoomMember[]>(demoRoomMembers);
   const [messages, setMessages] = useState<Message[]>(demoMessages);
+  const [aiJobs, setAiJobs] = useState<AiJob[]>(demoAiJobs);
+  const [invites, setInvites] = useState<Invite[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKey>("files");
   const [selectedMessageId, setSelectedMessageId] = useState(demoMessages[0]?.id ?? "");
   const [audienceType, setAudienceType] = useState<AudienceType>("all");
@@ -273,22 +281,58 @@ function ChatDesk({
   const [requiresConfirmation, setRequiresConfirmation] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("customer@example.com");
   const [notice, setNotice] = useState("외부 게스트는 초대받은 방과 파일만 볼 수 있습니다.");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [isInviting, setIsInviting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    setRoomUsers(mergeCurrentUser(users, currentUser));
+  }, [currentUser, users]);
+
+  useEffect(() => {
+    void refreshSnapshot();
+  }, [authSession.token]);
+
   const visibleMessages = useMemo(
-    () => messages.filter((message) => isMessageVisibleTo(message, currentUser.id, demoRoomMembers)),
-    [currentUser.id, messages]
+    () => messages.filter((message) => isMessageVisibleTo(message, currentUser.id, roomMembers)),
+    [currentUser.id, messages, roomMembers]
   );
   const selectedMessage = messages.find((message) => message.id === selectedMessageId) ?? visibleMessages.at(-1) ?? messages[0]!;
   const attachments = messages.flatMap((message) => message.attachments.map((attachment) => ({ attachment, message })));
   const selectedPdf = attachments.find(({ attachment }) => attachment.mimeType === "application/pdf")?.attachment;
 
-  const targetUsers = users.filter((user) => user.id !== currentUser.id && !user.id.startsWith("guest"));
+  const targetUsers = roomUsers.filter((user) => user.id !== currentUser.id && !user.id.startsWith("guest"));
 
-  function sendTextMessage(body = composer) {
+  async function refreshSnapshot() {
+    setIsSyncing(true);
+    setSyncError("");
+
+    try {
+      const snapshot = await getJson<MvpSnapshot>("/mvp");
+      const nextUsers = mergeCurrentUser(snapshot.users, currentUser);
+
+      setRoomUsers(nextUsers);
+      setRoomMembers(snapshot.roomMembers);
+      setMessages(snapshot.messages);
+      setAiJobs(snapshot.aiJobs);
+      setInvites(snapshot.invites);
+
+      if (!snapshot.messages.some((message) => message.id === selectedMessageId)) {
+        setSelectedMessageId(snapshot.messages[0]?.id ?? "");
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : "업무방 동기화 실패");
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
+  async function sendTextMessage(body = composer) {
     const trimmed = body.trim();
 
-    if (!trimmed) {
+    if (!trimmed || isSending) {
       return;
     }
 
@@ -304,6 +348,28 @@ function ChatDesk({
     setSelectedMessageId(message.id);
     setComposer("");
     setRequiresConfirmation(false);
+
+    setIsSending(true);
+    try {
+      const savedMessage = await postJson<Message>("/messages", {
+        senderId: currentUser.id,
+        body: trimmed,
+        audienceType,
+        targetUserIds: audienceType === "all" ? [] : targetUserIds,
+        requiresConfirmation
+      });
+
+      setMessages((current) => current.map((candidate) => candidate.id === message.id ? savedMessage : candidate));
+      setSelectedMessageId(savedMessage.id);
+      setNotice("메시지가 서버에 저장되었습니다.");
+    } catch (error) {
+      setMessages((current) => current.filter((candidate) => candidate.id !== message.id));
+      setComposer(trimmed);
+      setRequiresConfirmation(Boolean(message.metadata.requiresConfirmation));
+      setNotice(`메시지 전송 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsSending(false);
+    }
   }
 
   function toggleTarget(userId: string) {
@@ -328,15 +394,34 @@ function ChatDesk({
     setComposer((current) => (current ? `${current} ${reaction}` : reaction));
   }
 
-  function createInvite() {
+  async function createInvite() {
     const email = inviteEmail.trim();
 
     if (!email) {
       return;
     }
 
-    setNotice(`${email} 게스트 초대장이 준비되었습니다. 다운로드와 전달 권한은 제한됩니다.`);
-    setInviteEmail("");
+    if (!authSession.permissions.canInviteGuests) {
+      setNotice("현재 세션은 게스트 초대 권한이 없습니다.");
+      return;
+    }
+
+    setIsInviting(true);
+    try {
+      const invite = await postJson<Invite>("/invites", {
+        email,
+        role: "guest",
+        invitedBy: currentUser.id
+      });
+
+      setInvites((current) => [invite, ...current]);
+      setNotice(`${invite.email} 게스트 초대장이 서버에 저장되었습니다. 다운로드와 전달 권한은 제한됩니다.`);
+      setInviteEmail("");
+    } catch (error) {
+      setNotice(`게스트 초대 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsInviting(false);
+    }
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -508,10 +593,16 @@ function ChatDesk({
         <header className="workspace-header">
           <div>
             <h1 className="room-title">{demoRoom.name}</h1>
-            <div className="tiny">멤버 {users.length}명 · {authSession.role === "guest" ? "게스트 세션" : "내부 세션"} · 읽음 리포트 켜짐</div>
+            <div className="tiny">멤버 {roomUsers.length}명 · {authSession.role === "guest" ? "게스트 세션" : "내부 세션"} · 읽음 리포트 켜짐</div>
           </div>
           <div className="header-actions">
+            <span className="sync-chip" data-state={syncError ? "error" : isSyncing ? "loading" : "ready"}>
+              {syncError ? "동기화 실패" : isSyncing ? "동기화 중" : "API 동기화"}
+            </span>
             <span className="session-chip">{currentUser.displayName}</span>
+            <button className="icon-button" onClick={() => void refreshSnapshot()} title="업무방 새로고침" type="button">
+              <RefreshCw size={18} />
+            </button>
             <button className="icon-button" onClick={() => setNotice("음성통화는 LiveKit 연결 단계에서 활성화됩니다.")} title="음성통화" type="button">
               <Phone size={18} />
             </button>
@@ -633,13 +724,13 @@ function ChatDesk({
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
-                  sendTextMessage();
+                  void sendTextMessage();
                 }
               }}
               placeholder="메시지 입력"
               value={composer}
             />
-            <button className="icon-button" onClick={() => sendTextMessage()} title="보내기" type="button">
+            <button className="icon-button" disabled={isSending} onClick={() => void sendTextMessage()} title="보내기" type="button">
               <Send size={19} />
             </button>
           </div>
@@ -678,15 +769,18 @@ function ChatDesk({
           <PanelBody
             activePanel={activePanel}
             attachments={attachments.map((item) => item.attachment)}
+            canInviteGuests={authSession.permissions.canInviteGuests}
             currentUser={currentUser}
+            invites={invites}
             inviteEmail={inviteEmail}
+            isInviting={isInviting}
             notice={notice}
-            onCreateInvite={createInvite}
+            onCreateInvite={() => void createInvite()}
             onInviteEmailChange={setInviteEmail}
             selectedMessage={selectedMessage}
             selectedPdf={selectedPdf}
-            users={users}
-            aiJobs={demoAiJobs}
+            users={roomUsers}
+            aiJobs={aiJobs}
           />
         </div>
       </aside>
@@ -697,8 +791,11 @@ function ChatDesk({
 function PanelBody({
   activePanel,
   attachments,
+  canInviteGuests,
   currentUser,
+  invites,
   inviteEmail,
+  isInviting,
   notice,
   onCreateInvite,
   onInviteEmailChange,
@@ -709,8 +806,11 @@ function PanelBody({
 }: {
   activePanel: PanelKey;
   attachments: Attachment[];
+  canInviteGuests: boolean;
   currentUser: User;
+  invites: Invite[];
   inviteEmail: string;
+  isInviting: boolean;
   notice: string;
   onCreateInvite: () => void;
   onInviteEmailChange: (value: string) => void;
@@ -736,12 +836,30 @@ function PanelBody({
           </h2>
           <label className="field">
             이메일
-            <input className="text-input" value={inviteEmail} onChange={(event) => onInviteEmailChange(event.target.value)} />
+            <input className="text-input" disabled={!canInviteGuests || isInviting} value={inviteEmail} onChange={(event) => onInviteEmailChange(event.target.value)} />
           </label>
-          <button className="primary-button" onClick={onCreateInvite} style={{ marginTop: 10 }} type="button">
-            게스트 초대
+          <button className="primary-button" disabled={!canInviteGuests || isInviting} onClick={onCreateInvite} style={{ marginTop: 10 }} type="button">
+            {isInviting ? "초대 저장 중" : "게스트 초대"}
           </button>
         </div>
+        {invites.length > 0 ? (
+          <div className="panel-section">
+            <h2 className="panel-title">
+              <Inbox size={17} /> 최근 초대
+            </h2>
+            {invites.map((invite) => (
+              <div className="invite-row" key={invite.id}>
+                <span>
+                  <strong>{invite.email}</strong>
+                  <span className="tiny" style={{ display: "block" }}>
+                    {formatTime(invite.createdAt)} · {invite.role}
+                  </span>
+                </span>
+                <span className="status-chip">{invite.status}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="panel-section">
           <h2 className="panel-title">
             <Users size={17} /> 참여자
@@ -1021,6 +1139,26 @@ async function postJson<TResponse>(path: string, payload: Record<string, unknown
   }
 
   return response.json() as Promise<TResponse>;
+}
+
+async function getJson<TResponse>(path: string): Promise<TResponse> {
+  const response = await fetch(`${apiBaseUrl}${path}`);
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+
+  return response.json() as Promise<TResponse>;
+}
+
+function mergeCurrentUser(users: User[], currentUser: User) {
+  const mergedUsers = users.map((user) => user.id === currentUser.id ? currentUser : user);
+
+  if (mergedUsers.some((user) => user.id === currentUser.id)) {
+    return mergedUsers;
+  }
+
+  return [currentUser, ...mergedUsers];
 }
 
 async function readApiError(response: Response) {

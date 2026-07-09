@@ -461,7 +461,8 @@ button:disabled {
 .audience-chip,
 .status-chip,
 .guest-chip,
-.session-chip {
+.session-chip,
+.sync-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -491,6 +492,30 @@ button:disabled {
   border: 1px solid var(--line);
   background: #fff;
   color: var(--muted);
+}
+
+.sync-chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.sync-chip[data-state="ready"] {
+  border-color: rgba(15, 159, 143, 0.3);
+  background: #eef9f7;
+  color: var(--teal-dark);
+}
+
+.sync-chip[data-state="loading"] {
+  border-color: #e5c36c;
+  background: #fff8e6;
+  color: #694b0a;
+}
+
+.sync-chip[data-state="error"] {
+  border-color: #efb4ad;
+  background: #fff0ee;
+  color: #8f2d24;
 }
 
 .message-body {
@@ -694,18 +719,29 @@ button:disabled {
 
 .read-row,
 .member-row,
-.ai-row {
+.ai-row,
+.invite-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
 }
 
+.read-row,
+.member-row,
+.ai-row {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+}
+
+.invite-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .read-row:last-child,
 .member-row:last-child,
-.ai-row:last-child {
+.ai-row:last-child,
+.invite-row:last-child {
   border-bottom: 0;
 }
 

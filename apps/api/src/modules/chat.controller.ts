@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Inject, Param, Post } from "@nestjs/common";
-import { type AudienceType } from "@hahatalk/contracts";
+import { type AudienceType, type CreateInviteInput, type SendMessageInput } from "@hahatalk/contracts";
 import { IsEmail, IsIn, IsOptional, IsString, MinLength } from "class-validator";
 import { DemoStore } from "./demo-store.js";
 
@@ -81,7 +81,7 @@ export class ChatController {
 
   @Post("messages")
   sendMessage(@Body() body: SendMessageDto) {
-    return this.store.sendMessage(body);
+    return this.store.sendMessage(body as SendMessageInput);
   }
 
   @Get("messages/:messageId/read-report")
@@ -91,6 +91,6 @@ export class ChatController {
 
   @Post("invites")
   createInvite(@Body() body: CreateInviteDto) {
-    return this.store.createInvite(body);
+    return this.store.createInvite(body as CreateInviteInput);
   }
 }

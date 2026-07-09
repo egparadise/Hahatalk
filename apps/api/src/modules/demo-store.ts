@@ -14,27 +14,16 @@ import {
   normalizeEmail,
   type AudienceType,
   type AuthSession,
-  type Invite,
   type LoginInput,
   type Message,
+  type MvpSnapshot,
   type RoomMember,
+  type CreateInviteInput,
+  type Invite,
+  type SendMessageInput,
   type SignupInput,
   type User
 } from "@hahatalk/contracts";
-
-interface SendMessageInput {
-  senderId: string;
-  body: string;
-  audienceType: AudienceType;
-  targetUserIds: string[];
-  requiresConfirmation?: boolean;
-}
-
-interface CreateInviteInput {
-  email: string;
-  role: "member" | "guest";
-  invitedBy: string;
-}
 
 @Injectable()
 export class DemoStore {
@@ -44,7 +33,7 @@ export class DemoStore {
   private readonly invites: Invite[] = [];
   private readonly sessions: AuthSession[] = [];
 
-  snapshot() {
+  snapshot(): MvpSnapshot {
     return {
       organization: demoOrganization,
       room: demoRoom,
@@ -105,6 +94,12 @@ export class DemoStore {
   }
 
   sendMessage(input: SendMessageInput) {
+    const body = input.body.trim();
+
+    if (!body) {
+      throw new BadRequestException("message body must not be empty.");
+    }
+
     const id = `msg-${Date.now()}`;
     const now = new Date().toISOString();
     const message: Message = {
@@ -112,7 +107,7 @@ export class DemoStore {
       roomId: demoRoom.id,
       senderId: input.senderId,
       messageType: "text",
-      body: input.body,
+      body,
       metadata: input.requiresConfirmation ? { requiresConfirmation: true } : {},
       createdAt: now,
       audiences: createMessageAudience(id, input.audienceType, input.senderId, input.targetUserIds),
@@ -125,11 +120,17 @@ export class DemoStore {
   }
 
   createInvite(input: CreateInviteInput) {
+    const email = normalizeEmail(input.email);
+
+    if (!isValidEmail(email)) {
+      throw new BadRequestException("invite email must be valid.");
+    }
+
     const invite: Invite = {
       id: `invite-${Date.now()}`,
       roomId: demoRoom.id,
       invitedBy: input.invitedBy,
-      email: input.email,
+      email,
       role: input.role,
       status: "sent",
       createdAt: new Date().toISOString()

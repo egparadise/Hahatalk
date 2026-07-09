@@ -168,6 +168,20 @@ export interface LoginInput {
   email: string;
 }
 
+export interface SendMessageInput {
+  senderId: string;
+  body: string;
+  audienceType: AudienceType;
+  targetUserIds: string[];
+  requiresConfirmation?: boolean;
+}
+
+export interface CreateInviteInput {
+  email: string;
+  role: "member" | "guest";
+  invitedBy: string;
+}
+
 export interface AuthSession {
   token: string;
   user: User;
@@ -181,6 +195,16 @@ export interface AuthSession {
   };
   createdAt: string;
   expiresAt: string;
+}
+
+export interface MvpSnapshot {
+  organization: Organization;
+  room: Room;
+  users: User[];
+  roomMembers: RoomMember[];
+  messages: Message[];
+  aiJobs: AiJob[];
+  invites: Invite[];
 }
 
 export const demoOrganization: Organization = {
