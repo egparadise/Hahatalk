@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReadReport,
+  confirmMessageRead,
   createAuthSession,
   createDemoStorageKey,
   createMessageAudience,
@@ -81,5 +82,19 @@ describe("Smart Room contracts", () => {
     expect(getMessageTypeForMime("video/mp4")).toBe("video");
     expect(getMessageTypeForMime("application/pdf")).toBe("file");
     expect(createDemoStorageKey("Proposal V1.pdf", "2026-07-09T10:00:00+09:00")).toContain("proposal-v1.pdf");
+  });
+
+  it("confirms message reads without losing existing read times", () => {
+    const confirmed = confirmMessageRead(demoMessages[0]!, "user-jun", "2026-07-09T10:05:00+09:00");
+    const row = confirmed.reads.find((read) => read.userId === "user-jun");
+
+    expect(row?.readAt).toBe("2026-07-09T10:03:45+09:00");
+    expect(row?.confirmedAt).toBe("2026-07-09T10:05:00+09:00");
+
+    const unreadConfirmed = confirmMessageRead(demoMessages[0]!, "guest-hana", "2026-07-09T10:06:00+09:00");
+    const guestRow = unreadConfirmed.reads.find((read) => read.userId === "guest-hana");
+
+    expect(guestRow?.readAt).toBe("2026-07-09T10:06:00+09:00");
+    expect(guestRow?.confirmedAt).toBe("2026-07-09T10:06:00+09:00");
   });
 });

@@ -24,6 +24,8 @@ const requiredTerms = [
   "POST /messages",
   "POST /invites",
   "POST /attachments",
+  "messages/:messageId/confirm",
+  "confirmMessageRead",
   "CreateAttachmentMessageInput",
   "AI 작업",
   "화면 캡처"

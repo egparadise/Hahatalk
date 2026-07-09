@@ -192,6 +192,10 @@ export interface CreateAttachmentMessageInput {
   source: "file_upload" | "screen_capture";
 }
 
+export interface ConfirmMessageReadInput {
+  userId: string;
+}
+
 export interface AuthSession {
   token: string;
   user: User;
@@ -531,6 +535,18 @@ export function buildReadReport(message: Message, users: User[]) {
       state: read ? "read" as const : "unread" as const
     };
   });
+}
+
+export function confirmMessageRead(message: Message, userId: string, confirmedAt = new Date().toISOString()): Message {
+  const existingRead = message.reads.find((read) => read.userId === userId);
+  const reads = existingRead
+    ? message.reads.map((read) => read.userId === userId ? { ...read, confirmedAt, readAt: read.readAt || confirmedAt } : read)
+    : [...message.reads, { messageId: message.id, userId, readAt: confirmedAt, confirmedAt }];
+
+  return {
+    ...message,
+    reads
+  };
 }
 
 export function createMessageAudience(

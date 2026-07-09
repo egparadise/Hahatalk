@@ -1,5 +1,11 @@
 import { Body, Controller, Get, Inject, Param, Post } from "@nestjs/common";
-import { type AudienceType, type CreateAttachmentMessageInput, type CreateInviteInput, type SendMessageInput } from "@hahatalk/contracts";
+import {
+  type AudienceType,
+  type ConfirmMessageReadInput,
+  type CreateAttachmentMessageInput,
+  type CreateInviteInput,
+  type SendMessageInput
+} from "@hahatalk/contracts";
 import { IsEmail, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from "class-validator";
 import { DemoStore } from "./demo-store.js";
 
@@ -75,6 +81,11 @@ class LoginDto {
   email = "";
 }
 
+class ConfirmMessageReadDto {
+  @IsString()
+  userId = "user-you";
+}
+
 @Controller()
 export class ChatController {
   constructor(@Inject(DemoStore) private readonly store: DemoStore) {}
@@ -111,6 +122,11 @@ export class ChatController {
   @Get("messages/:messageId/read-report")
   readReport(@Param("messageId") messageId: string) {
     return this.store.readReport(messageId);
+  }
+
+  @Post("messages/:messageId/confirm")
+  confirmRead(@Param("messageId") messageId: string, @Body() body: ConfirmMessageReadDto) {
+    return this.store.confirmRead(messageId, body as ConfirmMessageReadInput);
   }
 
   @Post("invites")

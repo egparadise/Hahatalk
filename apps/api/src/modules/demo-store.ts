@@ -11,11 +11,13 @@ import {
   demoUsers,
   findCharacterPreset,
   createDemoStorageKey,
+  confirmMessageRead,
   getMessageTypeForMime,
   isValidEmail,
   normalizeEmail,
   type AudienceType,
   type AuthSession,
+  type ConfirmMessageReadInput,
   type LoginInput,
   type Message,
   type MvpSnapshot,
@@ -196,6 +198,20 @@ export class DemoStore {
     }
 
     return buildReadReport(message, this.users);
+  }
+
+  confirmRead(messageId: string, input: ConfirmMessageReadInput) {
+    const messageIndex = this.messages.findIndex((candidate) => candidate.id === messageId);
+
+    if (messageIndex < 0) {
+      throw new NotFoundException("Message not found.");
+    }
+
+    const message = this.messages[messageIndex]!;
+    const confirmedMessage = confirmMessageRead(message, input.userId);
+    this.messages[messageIndex] = confirmedMessage;
+
+    return confirmedMessage;
   }
 
   private getMemberRole(userId: string) {

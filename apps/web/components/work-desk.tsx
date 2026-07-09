@@ -286,6 +286,7 @@ function ChatDesk({
   const [isSending, setIsSending] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isConfirmingRead, setIsConfirmingRead] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -422,6 +423,27 @@ function ChatDesk({
       setNotice(`게스트 초대 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
     } finally {
       setIsInviting(false);
+    }
+  }
+
+  async function confirmSelectedRead() {
+    if (!selectedMessage?.metadata.requiresConfirmation || isConfirmingRead) {
+      return;
+    }
+
+    setIsConfirmingRead(true);
+    try {
+      const confirmedMessage = await postJson<Message>(`/messages/${selectedMessage.id}/confirm`, {
+        userId: currentUser.id
+      });
+
+      setMessages((current) => current.map((message) => message.id === confirmedMessage.id ? confirmedMessage : message));
+      setSelectedMessageId(confirmedMessage.id);
+      setNotice("확인 상태가 읽음 리포트에 저장되었습니다.");
+    } catch (error) {
+      setNotice(`확인 처리 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsConfirmingRead(false);
     }
   }
 
@@ -820,8 +842,10 @@ function ChatDesk({
             currentUser={currentUser}
             invites={invites}
             inviteEmail={inviteEmail}
+            isConfirmingRead={isConfirmingRead}
             isInviting={isInviting}
             notice={notice}
+            onConfirmRead={() => void confirmSelectedRead()}
             onCreateInvite={() => void createInvite()}
             onInviteEmailChange={setInviteEmail}
             selectedMessage={selectedMessage}
@@ -842,8 +866,10 @@ function PanelBody({
   currentUser,
   invites,
   inviteEmail,
+  isConfirmingRead,
   isInviting,
   notice,
+  onConfirmRead,
   onCreateInvite,
   onInviteEmailChange,
   selectedMessage,
@@ -857,8 +883,10 @@ function PanelBody({
   currentUser: User;
   invites: Invite[];
   inviteEmail: string;
+  isConfirmingRead: boolean;
   isInviting: boolean;
   notice: string;
+  onConfirmRead: () => void;
   onCreateInvite: () => void;
   onInviteEmailChange: (value: string) => void;
   selectedMessage: Message;
@@ -867,7 +895,7 @@ function PanelBody({
   aiJobs: AiJob[];
 }) {
   if (activePanel === "reads") {
-    return <ReadPanel message={selectedMessage} users={users} />;
+    return <ReadPanel currentUser={currentUser} isConfirmingRead={isConfirmingRead} message={selectedMessage} onConfirmRead={onConfirmRead} users={users} />;
   }
 
   if (activePanel === "pdf") {
@@ -1056,8 +1084,22 @@ function PdfPanel({ pdf }: { pdf: Attachment | undefined }) {
   );
 }
 
-function ReadPanel({ message, users }: { message: Message; users: User[] }) {
+function ReadPanel({
+  currentUser,
+  isConfirmingRead,
+  message,
+  onConfirmRead,
+  users
+}: {
+  currentUser: User;
+  isConfirmingRead: boolean;
+  message: Message;
+  onConfirmRead: () => void;
+  users: User[];
+}) {
   const report = buildReadReport(message, users);
+  const currentRead = report.find((row) => row.user.id === currentUser.id);
+  const canConfirm = Boolean(message.metadata.requiresConfirmation && !currentRead?.confirmedAt);
 
   return (
     <>
@@ -1066,6 +1108,11 @@ function ReadPanel({ message, users }: { message: Message; users: User[] }) {
           <CheckCircle2 size={17} /> 읽음 리포트
         </h2>
         <p className="panel-muted">{message.body}</p>
+        {canConfirm ? (
+          <button className="primary-button" disabled={isConfirmingRead} onClick={onConfirmRead} style={{ marginTop: 10 }} type="button">
+            {isConfirmingRead ? "확인 저장 중" : "확인했습니다"}
+          </button>
+        ) : null}
       </div>
       <div className="panel-section">
         {report.map((row) => (
