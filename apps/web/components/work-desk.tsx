@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Camera,
   CheckCircle2,
+  ChevronUp,
   Copy,
   FileText,
   FolderOpen,
@@ -19,20 +20,25 @@ import {
   MoreHorizontal,
   PanelRightOpen,
   Paperclip,
+  Pencil,
   Phone,
   Plus,
+  Reply,
   RefreshCw,
   Search,
   Send,
   ShieldCheck,
   Sparkles,
+  Trash2,
   UserCheck,
   Users,
   Video,
   Volume2,
+  X,
   XCircle
 } from "lucide-react";
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { io, type Socket } from "socket.io-client";
 import {
   buildReadReport,
   characterPresets,
@@ -53,18 +59,23 @@ import {
   type Attachment,
   type AudienceType,
   type CreatedMembershipInvitation,
+  type ConversationListItem,
+  type ConversationView,
   type DeviceSessionView,
   type InvitationAcceptanceResult,
   type InvitationPreview,
   type Message,
+  type MessageDeleteResult,
   type MembershipInvitationView,
   type MvpSnapshot,
   type RoomMember,
   type RoomPresentation,
+  type TypingUpdate,
   type User
 } from "@hahatalk/contracts";
 
 type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
+type ReadReportRow = ReturnType<typeof buildReadReport>[number];
 type AuthMode = "activate" | "login" | "invitation";
 type CredentialAuthMode = Exclude<AuthMode, "invitation">;
 
@@ -579,26 +590,37 @@ function ChatDesk({
   users: User[];
 }) {
   const initialRoomMembers = mergeCurrentMembership(demoRoomMembers, currentUser, authSession.role, authSession.createdAt);
-  const initialRoomPresentation = getRoomPresentationForViewer(demoRoom, initialRoomMembers, users, currentUser.id);
+  const initialRoomPresentation = {
+    ...getRoomPresentationForViewer(demoRoom, initialRoomMembers, users, currentUser.id),
+    roomId: authSession.roomId
+  };
   const initialVisibleMemberIds = new Set(initialRoomPresentation.visibleMemberIds);
+  const [activeSpaceId, setActiveSpaceId] = useState(authSession.roomId);
+  const [spaces, setSpaces] = useState<ConversationListItem[]>([]);
   const [roomPresentation, setRoomPresentation] = useState<RoomPresentation>(initialRoomPresentation);
   const [roomUsers, setRoomUsers] = useState<User[]>(users.filter((user) => initialVisibleMemberIds.has(user.id)));
   const [roomMembers, setRoomMembers] = useState<RoomMember[]>(
     initialRoomMembers.filter((member) => initialVisibleMemberIds.has(member.userId))
   );
-  const [messages, setMessages] = useState<Message[]>(
-    demoMessages
-      .map((message) => projectMessageForViewer(message, demoRoom, initialRoomMembers, currentUser.id))
-      .filter((message): message is Message => Boolean(message))
-  );
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [nextMessageCursor, setNextMessageCursor] = useState<string | undefined>();
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [aiJobs, setAiJobs] = useState<AiJob[]>(demoAiJobs);
   const [invitations, setInvitations] = useState<MembershipInvitationView[]>([]);
   const [sessions, setSessions] = useState<DeviceSessionView[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKey>("files");
-  const [selectedMessageId, setSelectedMessageId] = useState(demoMessages[0]?.id ?? "");
+  const [selectedMessageId, setSelectedMessageId] = useState("");
   const [audienceType, setAudienceType] = useState<AudienceType>("all");
   const [targetUserIds, setTargetUserIds] = useState<string[]>(["user-mina"]);
   const [composer, setComposer] = useState("");
+  const [replyToId, setReplyToId] = useState<string | undefined>();
+  const [editingMessageId, setEditingMessageId] = useState<string | undefined>();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Message[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<TypingUpdate[]>([]);
+  const [realtimeState, setRealtimeState] = useState<"connecting" | "online" | "offline">("connecting");
   const [requiresConfirmation, setRequiresConfirmation] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("customer@example.com");
   const [inviteRole, setInviteRole] = useState<"member" | "guest">("guest");
@@ -618,21 +640,94 @@ function ChatDesk({
   const [isSessionAction, setIsSessionAction] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isConfirmingRead, setIsConfirmingRead] = useState(false);
+  const [readReportRows, setReadReportRows] = useState<ReadReportRow[] | undefined>();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeSpaceIdRef = useRef(activeSpaceId);
+  const readPendingIdsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    activeSpaceIdRef.current = activeSpaceId;
+  }, [activeSpaceId]);
 
   useEffect(() => {
     void refreshSnapshot();
   }, [authSession.user.id]);
 
-  const visibleMessages = useMemo(
-    () => messages.filter((message) => isMessageVisibleTo(message, currentUser.id, roomMembers)),
-    [currentUser.id, messages, roomMembers]
-  );
-  const selectedMessage = messages.find((message) => message.id === selectedMessageId) ?? visibleMessages.at(-1) ?? messages[0]!;
+  useEffect(() => {
+    const socket = io(apiBaseUrl, {
+      transports: ["websocket"],
+      withCredentials: true
+    });
+    socketRef.current = socket;
+    socket.on("connect", () => {
+      setRealtimeState("online");
+      socket.emit("room:join", { spaceId: activeSpaceIdRef.current });
+    });
+    socket.on("disconnect", () => setRealtimeState("offline"));
+    socket.on("connect_error", () => setRealtimeState("offline"));
+    const applyMessage = (message: Message) => {
+      if (message.roomId === activeSpaceIdRef.current) {
+        setMessages((current) => upsertMessage(current, message));
+      }
+      void refreshSpaceList();
+    };
+    socket.on("message:created", applyMessage);
+    socket.on("message:updated", applyMessage);
+    socket.on("message:delivery-updated", applyMessage);
+    socket.on("message:deleted", (deleted: MessageDeleteResult) => {
+      setMessages((current) => current.filter((message) => message.id !== deleted.id));
+      setSelectedMessageId((current) => current === deleted.id ? "" : current);
+      void refreshSpaceList();
+    });
+    socket.on("typing:updated", (update: TypingUpdate) => {
+      if (update.spaceId !== activeSpaceIdRef.current || update.userId === currentUser.id) {
+        return;
+      }
+      setTypingUsers((current) => update.active
+        ? [...current.filter((candidate) => candidate.userId !== update.userId), update]
+        : current.filter((candidate) => candidate.userId !== update.userId));
+    });
+    return () => {
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      socket.close();
+      socketRef.current = null;
+    };
+  }, [currentUser.id]);
+
+  useEffect(() => {
+    const unread = messages.filter((message) => {
+      if (message.senderId === currentUser.id || readPendingIdsRef.current.has(message.id)) return false;
+      return message.deliveries.some((delivery) => delivery.recipientId === currentUser.id && !delivery.readAt && !delivery.revokedAt);
+    });
+    for (const message of unread) {
+      readPendingIdsRef.current.add(message.id);
+      void postJson<Message>(`/messages/${message.id}/read`, {})
+        .then((updated) => setMessages((current) => upsertMessage(current, updated)))
+        .catch(() => undefined)
+        .finally(() => readPendingIdsRef.current.delete(message.id));
+    }
+  }, [currentUser.id, messages]);
+
+  const visibleMessages = messages;
+  const selectedMessage = messages.find((message) => message.id === selectedMessageId) ?? visibleMessages.at(-1);
   const attachments = messages.flatMap((message) => message.attachments.map((attachment) => ({ attachment, message })));
   const selectedPdf = attachments.find(({ attachment }) => attachment.mimeType === "application/pdf")?.attachment;
+  const replyToMessage = messages.find((message) => message.id === replyToId);
 
-  const targetUsers = roomUsers.filter((user) => user.id !== currentUser.id && !user.id.startsWith("guest"));
+  const targetUsers = roomUsers.filter((user) => user.id !== currentUser.id);
+  const currentRoomMembership = roomMembers.find((member) => member.userId === currentUser.id);
+  const canManageCurrentConversation = roomPresentation.ownerId === currentUser.id
+    || (roomPresentation.mode !== "direct" && ["owner", "admin"].includes(currentRoomMembership?.role ?? ""));
+  const canFetchSelectedReadReport = Boolean(
+    selectedMessage && (selectedMessage.senderId === currentUser.id || canManageCurrentConversation)
+  );
+  const canOpenRoomReadReport = Boolean(
+    selectedMessage
+    && (selectedMessage.metadata.requiresConfirmation || canFetchSelectedReadReport)
+  );
 
   function getEffectiveAudience() {
     if (roomPresentation.canSelectAudience) {
@@ -650,33 +745,112 @@ function ChatDesk({
     return { audienceType: "private" as const, targetUserIds: counterpartId ? [counterpartId] : [] };
   }
 
+  function applyConversationView(view: ConversationView) {
+    const nextUsers = mergeCurrentUser(view.users, currentUser);
+    setActiveSpaceId(view.room.roomId);
+    setRoomPresentation(view.room);
+    setRoomUsers(nextUsers);
+    setRoomMembers(view.roomMembers);
+    setMessages(view.messages);
+    setHasMoreMessages(Boolean(view.hasMore));
+    setNextMessageCursor(view.nextCursor);
+    setSelectedMessageId(view.messages.at(-1)?.id ?? "");
+    setAudienceType("all");
+    setTargetUserIds(view.room.visibleMemberIds.filter((id) => id !== currentUser.id).slice(0, 1));
+    setReplyToId(undefined);
+    setEditingMessageId(undefined);
+    setComposer("");
+    setTypingUsers([]);
+    setSearchResults([]);
+    setReadReportRows(undefined);
+  }
+
+  async function refreshSpaceList() {
+    try {
+      setSpaces(await getJson<ConversationListItem[]>("/spaces"));
+    } catch {
+      // The current room remains usable while the compact list retries on the next event.
+    }
+  }
+
   async function refreshSnapshot() {
     setIsSyncing(true);
     setSyncError("");
 
     try {
       const [snapshot, invitationRows, sessionRows] = await Promise.all([
-        getJson<MvpSnapshot>("/mvp"),
+        getJson<MvpSnapshot>(`/mvp?spaceId=${encodeURIComponent(activeSpaceIdRef.current)}`),
         getJson<MembershipInvitationView[]>("/invitations"),
         getJson<DeviceSessionView[]>("/auth/sessions")
       ]);
-      const nextUsers = mergeCurrentUser(snapshot.users, currentUser);
-
-      setRoomPresentation(snapshot.room);
-      setRoomUsers(nextUsers);
-      setRoomMembers(snapshot.roomMembers);
-      setMessages(snapshot.messages);
+      applyConversationView(snapshot);
+      setSpaces(snapshot.spaces ?? []);
       setAiJobs(snapshot.aiJobs);
       setInvitations(invitationRows);
       setSessions(sessionRows);
-
-      if (!snapshot.messages.some((message) => message.id === selectedMessageId)) {
-        setSelectedMessageId(snapshot.messages[0]?.id ?? "");
-      }
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : "업무방 동기화 실패");
     } finally {
       setIsSyncing(false);
+    }
+  }
+
+  async function switchRoom(spaceId: string) {
+    if (spaceId === activeSpaceId || isSyncing) return;
+    setIsSyncing(true);
+    setSyncError("");
+    try {
+      const view = await getJson<ConversationView>(`/spaces/${spaceId}/view`);
+      activeSpaceIdRef.current = spaceId;
+      applyConversationView(view);
+      socketRef.current?.emit("room:join", { spaceId });
+      await refreshSpaceList();
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : "대화방을 열지 못했습니다.");
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
+  async function loadOlderMessages() {
+    if (!nextMessageCursor || isLoadingOlder) return;
+    setIsLoadingOlder(true);
+    try {
+      const view = await getJson<ConversationView>(
+        `/spaces/${activeSpaceId}/view?limit=40&before=${encodeURIComponent(nextMessageCursor)}`
+      );
+      setMessages((current) => mergeOlderMessages(view.messages, current));
+      setHasMoreMessages(Boolean(view.hasMore));
+      setNextMessageCursor(view.nextCursor);
+    } catch (error) {
+      setNotice(`이전 메시지 불러오기 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }
+
+  async function searchConversation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+    if (query.length < 2) {
+      setNotice("검색어를 두 글자 이상 입력해 주세요.");
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const results = await getJson<Message[]>(
+        `/spaces/${activeSpaceId}/search?q=${encodeURIComponent(query)}`
+      );
+      setSearchResults(results);
+      setNotice(results.length ? `메시지 ${results.length}개를 찾았습니다.` : "검색 결과가 없습니다.");
+    } catch (error) {
+      setNotice(`검색 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsSearching(false);
     }
   }
 
@@ -687,41 +861,98 @@ function ChatDesk({
       return;
     }
 
-    const effectiveAudience = getEffectiveAudience();
-
-    const message = createLocalMessage({
-      body: trimmed,
-      currentUser,
-      audienceType: effectiveAudience.audienceType,
-      targetUserIds: effectiveAudience.targetUserIds,
-      roomMembers,
-      requiresConfirmation
-    });
-
-    setMessages((current) => [...current, message]);
-    setSelectedMessageId(message.id);
-    setComposer("");
-    setRequiresConfirmation(false);
-
     setIsSending(true);
     try {
-      const savedMessage = await postJson<Message>("/messages", {
-        body: trimmed,
-        audienceType: effectiveAudience.audienceType,
-        targetUserIds: effectiveAudience.targetUserIds,
-        requiresConfirmation
-      });
+      let savedMessage: Message;
+      if (editingMessageId) {
+        savedMessage = await requestJson<Message>(`/messages/${editingMessageId}`, "PATCH", { body: trimmed });
+      } else {
+        const effectiveAudience = getEffectiveAudience();
+        const result = await postJson<{ message: Message; replay: boolean }>("/messages", {
+          audienceType: effectiveAudience.audienceType,
+          body: trimmed,
+          clientMessageId: `web-${crypto.randomUUID()}`,
+          ...(replyToId ? { parentMessageId: replyToId } : {}),
+          requiresConfirmation,
+          spaceId: activeSpaceId,
+          targetUserIds: effectiveAudience.targetUserIds
+        });
+        savedMessage = result.message;
+      }
 
-      setMessages((current) => current.map((candidate) => candidate.id === message.id ? savedMessage : candidate));
+      setMessages((current) => upsertMessage(current, savedMessage));
       setSelectedMessageId(savedMessage.id);
-      setNotice("메시지가 서버에 저장되었습니다.");
+      setComposer("");
+      setReplyToId(undefined);
+      setEditingMessageId(undefined);
+      setRequiresConfirmation(false);
+      socketRef.current?.emit("typing:set", { active: false, spaceId: activeSpaceId, targetUserIds: [] });
+      setNotice(savedMessage.editedAt ? "수정한 메시지를 저장했습니다." : "메시지가 PostgreSQL에 저장되었습니다.");
+      await refreshSpaceList();
     } catch (error) {
-      setMessages((current) => current.filter((candidate) => candidate.id !== message.id));
-      setComposer(trimmed);
-      setRequiresConfirmation(Boolean(message.metadata.requiresConfirmation));
       setNotice(`메시지 전송 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
     } finally {
       setIsSending(false);
+    }
+  }
+
+  function handleComposerChange(value: string) {
+    setComposer(value);
+    const effectiveAudience = getEffectiveAudience();
+    socketRef.current?.emit("typing:set", {
+      active: Boolean(value.trim()),
+      spaceId: activeSpaceId,
+      targetUserIds: effectiveAudience.targetUserIds
+    });
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      socketRef.current?.emit("typing:set", {
+        active: false,
+        spaceId: activeSpaceId,
+        targetUserIds: effectiveAudience.targetUserIds
+      });
+    }, 1_200);
+  }
+
+  function beginReply(message: Message) {
+    setReplyToId(message.id);
+    setEditingMessageId(undefined);
+    composerRef.current?.focus();
+  }
+
+  function beginEdit(message: Message) {
+    setEditingMessageId(message.id);
+    setReplyToId(undefined);
+    setComposer(message.body);
+    composerRef.current?.focus();
+  }
+
+  function cancelComposeContext() {
+    setReplyToId(undefined);
+    setEditingMessageId(undefined);
+    setComposer("");
+  }
+
+  async function deleteMessage(message: Message) {
+    try {
+      await requestJson<MessageDeleteResult>(`/messages/${message.id}`, "DELETE");
+      setMessages((current) => current.filter((candidate) => candidate.id !== message.id));
+      setSelectedMessageId((current) => current === message.id ? "" : current);
+      setNotice("메시지를 삭제했습니다.");
+      await refreshSpaceList();
+    } catch (error) {
+      setNotice(`메시지 삭제 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
+  async function openReadReport(message: Message) {
+    setSelectedMessageId(message.id);
+    setActivePanel("reads");
+    setReadReportRows(undefined);
+    try {
+      setReadReportRows(await getJson<ReadReportRow[]>(`/messages/${message.id}/read-report`));
+    } catch (error) {
+      setNotice(`읽음 리포트 조회 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
     }
   }
 
@@ -879,6 +1110,11 @@ function ChatDesk({
 
       setMessages((current) => current.map((message) => message.id === confirmedMessage.id ? confirmedMessage : message));
       setSelectedMessageId(confirmedMessage.id);
+      if (confirmedMessage.senderId === currentUser.id || canManageCurrentConversation) {
+        setReadReportRows(await getJson<ReadReportRow[]>(`/messages/${confirmedMessage.id}/read-report`));
+      } else {
+        setReadReportRows(buildReadReport(confirmedMessage, roomUsers));
+      }
       setNotice("확인 상태가 읽음 리포트에 저장되었습니다.");
     } catch (error) {
       setNotice(`확인 처리 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
@@ -1111,26 +1347,59 @@ function ChatDesk({
           </h2>
         </div>
         <div className="sidebar-header">
-          <label className="search-box">
+          <form className="search-box" onSubmit={searchConversation}>
             <Search size={16} />
-            <input className="text-input" placeholder="대화, 파일, 사람 검색" />
-          </label>
+            <input
+              aria-label="현재 대화 검색"
+              className="text-input"
+              placeholder="현재 대화 검색"
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                if (!event.target.value) setSearchResults([]);
+              }}
+            />
+            <button className="search-submit" disabled={isSearching} title="검색" type="submit">
+              <Search size={16} />
+            </button>
+          </form>
         </div>
         <div className="room-list">
-          <button className="room-item" data-active="true" type="button">
-            <strong>{roomPresentation.title}</strong>
-            <span className="room-meta">
-              {roomPresentation.mode === "hub_owner" ? "전체 공지/선택 발송/개별 대화" : "개인 대화"}
-            </span>
-          </button>
-          <button className="room-item" type="button">
-            <strong>고객지원 대기실</strong>
-            <span className="room-meta">게스트 안전 모드</span>
-          </button>
-          <button className="room-item" type="button">
-            <strong>영업자료 검토</strong>
-            <span className="room-meta">PDF와 읽음 확인</span>
-          </button>
+          {searchResults.length > 0 ? (
+            <div className="search-results" aria-label="메시지 검색 결과">
+              <div className="room-meta">검색 결과 {searchResults.length}개</div>
+              {searchResults.map((message) => (
+                <button
+                  className="search-result"
+                  key={message.id}
+                  onClick={() => {
+                    setMessages((current) => upsertMessage(current, message));
+                    setSelectedMessageId(message.id);
+                  }}
+                  type="button"
+                >
+                  <strong>{message.body}</strong>
+                  <span className="tiny">{formatDateTime(message.createdAt)}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {spaces.map((space) => (
+            <button
+              className="room-item"
+              data-active={space.room.roomId === activeSpaceId}
+              key={space.room.roomId}
+              onClick={() => void switchRoom(space.room.roomId)}
+              type="button"
+            >
+              <span className="room-item-title">
+                <strong>{space.room.title}</strong>
+                {space.unreadCount > 0 ? <span className="unread-badge">{space.unreadCount}</span> : null}
+              </span>
+              <span className="room-meta">{space.lastMessagePreview ?? "대화를 시작하세요"}</span>
+            </button>
+          ))}
+          {spaces.length === 0 && !isSyncing ? <div className="panel-muted empty-state">참여 중인 대화가 없습니다.</div> : null}
         </div>
       </aside>
 
@@ -1140,15 +1409,17 @@ function ChatDesk({
             <h1 className="room-title">{roomPresentation.title}</h1>
             <div className="tiny">
               {roomPresentation.rosterVisible ? `허브 ${roomPresentation.memberCount ?? roomUsers.length}명` : "1:1 대화"}
-              {` · ${authSession.role === "guest" ? "게스트 세션" : "내부 세션"}`}
+              {` · ${currentUser.displayName} · ${authSession.role === "guest" ? "게스트 세션" : "내부 세션"}`}
               {authSession.permissions.canOpenReadReport ? " · 읽음 리포트 켜짐" : ""}
             </div>
           </div>
           <div className="header-actions">
-            <span className="sync-chip" data-state={syncError ? "error" : isSyncing ? "loading" : "ready"}>
-              {syncError ? "동기화 실패" : isSyncing ? "동기화 중" : "API 동기화"}
+            <span
+              className="sync-chip"
+              data-state={syncError ? "error" : isSyncing || realtimeState !== "online" ? "loading" : "ready"}
+            >
+              {syncError ? "동기화 실패" : isSyncing ? "저장 동기화 중" : realtimeState === "online" ? "저장 · 실시간" : "실시간 재연결"}
             </span>
-            <span className="session-chip">{currentUser.displayName}</span>
             <button className="icon-button" onClick={() => void refreshSnapshot()} title="업무방 새로고침" type="button">
               <RefreshCw size={18} />
             </button>
@@ -1171,25 +1442,56 @@ function ChatDesk({
         </header>
 
         <div className="message-list" role="log">
+          {hasMoreMessages ? (
+            <button className="load-older-button" disabled={isLoadingOlder} onClick={() => void loadOlderMessages()} type="button">
+              <ChevronUp size={16} /> {isLoadingOlder ? "불러오는 중" : "이전 메시지"}
+            </button>
+          ) : null}
+          {syncError ? (
+            <div className="conversation-state" role="alert">
+              <strong>대화를 불러오지 못했습니다.</strong>
+              <span>{syncError}</span>
+              <button className="secondary-button" onClick={() => void refreshSnapshot()} type="button">다시 시도</button>
+            </div>
+          ) : null}
+          {!syncError && !isSyncing && visibleMessages.length === 0 ? (
+            <div className="conversation-state">
+              <strong>아직 메시지가 없습니다.</strong>
+              <span>첫 업무 대화를 시작해 보세요.</span>
+            </div>
+          ) : null}
           {visibleMessages.map((message) => {
             const sender = roomUsers.find((user) => user.id === message.senderId) ?? currentUser;
             const readCount = message.deliveries.filter((delivery) => delivery.readAt).length;
+            const parentMessage = messages.find((candidate) => candidate.id === message.parentMessageId);
+            const canReadMessageReport = message.senderId === currentUser.id || canManageCurrentConversation;
+            const canDeleteMessage = message.senderId === currentUser.id
+              || canManageCurrentConversation;
 
             return (
               <article
                 className="message"
                 data-own={message.senderId === currentUser.id}
                 key={message.id}
-                onClick={() => setSelectedMessageId(message.id)}
+                onClick={() => {
+                  setSelectedMessageId(message.id);
+                  setReadReportRows(undefined);
+                }}
               >
                 <img className="avatar" alt="" src={sender.character.thumbnailUrl} />
                 <div className="message-bubble">
                   <div className="message-meta">
                     <strong>{message.senderId === currentUser.id ? "나" : sender.displayName}</strong>
                     <span>{formatTime(message.createdAt)}</span>
+                    {message.editedAt ? <span>수정됨</span> : null}
                     <span className="audience-chip">{getAudienceLabel(message, roomUsers)}</span>
                     {message.metadata.requiresConfirmation ? <span className="status-chip">확인 요청</span> : null}
                   </div>
+                  {parentMessage ? (
+                    <button className="reply-reference" onClick={() => setSelectedMessageId(parentMessage.id)} type="button">
+                      <Reply size={14} /> {parentMessage.body}
+                    </button>
+                  ) : null}
                   <p className="message-body">{message.body}</p>
                   {message.attachments.length > 0 ? (
                     <div className="attachment-strip">
@@ -1210,10 +1512,36 @@ function ChatDesk({
                     </div>
                   ) : null}
                   <div className="message-actions" style={{ marginTop: 10 }}>
-                    {authSession.permissions.canOpenReadReport ? <span className="tiny">읽음 {readCount}</span> : null}
-                    {authSession.permissions.canOpenReadReport ? (
-                      <button className="secondary-button" onClick={() => setActivePanel("reads")} type="button">
+                    {canReadMessageReport ? <span className="tiny">읽음 {readCount}</span> : null}
+                    <button className="message-action-button" onClick={(event) => { event.stopPropagation(); beginReply(message); }} title="답장" type="button">
+                      <Reply size={15} />
+                    </button>
+                    {message.senderId === currentUser.id ? (
+                      <button className="message-action-button" onClick={(event) => { event.stopPropagation(); beginEdit(message); }} title="수정" type="button">
+                        <Pencil size={15} />
+                      </button>
+                    ) : null}
+                    {canDeleteMessage ? (
+                      <button className="message-action-button danger-action" onClick={(event) => { event.stopPropagation(); void deleteMessage(message); }} title="삭제" type="button">
+                        <Trash2 size={15} />
+                      </button>
+                    ) : null}
+                    {canReadMessageReport ? (
+                      <button className="secondary-button" onClick={(event) => { event.stopPropagation(); void openReadReport(message); }} type="button">
                         <CheckCircle2 size={16} /> 리포트
+                      </button>
+                    ) : message.metadata.requiresConfirmation ? (
+                      <button
+                        className="secondary-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedMessageId(message.id);
+                          setReadReportRows(undefined);
+                          setActivePanel("reads");
+                        }}
+                        type="button"
+                      >
+                        <CheckCircle2 size={16} /> 확인
                       </button>
                     ) : null}
                   </div>
@@ -1221,9 +1549,21 @@ function ChatDesk({
               </article>
             );
           })}
+          {typingUsers.length > 0 ? (
+            <div className="typing-indicator">{typingUsers.map((user) => user.displayName).join(", ")} 입력 중...</div>
+          ) : null}
         </div>
 
         <footer className="composer">
+          {replyToMessage || editingMessageId ? (
+            <div className="composer-context">
+              <span>
+                <strong>{editingMessageId ? "메시지 수정" : "답장"}</strong>
+                <span>{editingMessageId ? composer : replyToMessage?.body}</span>
+              </span>
+              <button className="icon-button" onClick={cancelComposeContext} title="취소" type="button"><X size={16} /></button>
+            </div>
+          ) : null}
           <div className="audience-tabs" aria-label="메시지 대상">
             {roomPresentation.canSelectAudience ? (
               <>
@@ -1253,10 +1593,10 @@ function ChatDesk({
             </div>
           ) : null}
           <div className="composer-tools">
-            <button className="icon-button" disabled={isUploading} onClick={() => fileInputRef.current?.click()} title="파일 첨부" type="button">
+            <button className="icon-button" disabled={isUploading} onClick={() => setNotice("파일 원본 영속 저장은 Stage 5에서 활성화됩니다.")} title="파일 첨부" type="button">
               <Paperclip size={18} />
             </button>
-            <button className="icon-button" disabled={isUploading} onClick={shareScreenCapture} title="화면 캡처 공유" type="button">
+            <button className="icon-button" disabled={isUploading} onClick={() => setNotice("화면 캡처 영속 공유는 Stage 5에서 활성화됩니다.")} title="화면 캡처 공유" type="button">
               <Camera size={18} />
             </button>
             <button className="icon-button" onClick={() => setNotice("STT 음성메시지는 AI 작업 대기열로 들어갑니다.")} title="STT" type="button">
@@ -1277,7 +1617,7 @@ function ChatDesk({
           <div className="composer-row">
             <textarea
               className="composer-input"
-              onChange={(event) => setComposer(event.target.value)}
+              onChange={(event) => handleComposerChange(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -1285,9 +1625,10 @@ function ChatDesk({
                 }
               }}
               placeholder="메시지 입력"
+              ref={composerRef}
               value={composer}
             />
-            <button className="icon-button" disabled={isSending} onClick={() => void sendTextMessage()} title="보내기" type="button">
+            <button className="icon-button" disabled={isSending || !composer.trim()} onClick={() => void sendTextMessage()} title={editingMessageId ? "수정 저장" : "보내기"} type="button">
               <Send size={19} />
             </button>
           </div>
@@ -1309,8 +1650,21 @@ function ChatDesk({
           <button className="panel-tab" data-active={activePanel === "pdf"} onClick={() => setActivePanel("pdf")} title="PDF" type="button">
             <FileText size={18} />
           </button>
-          {authSession.permissions.canOpenReadReport ? (
-            <button className="panel-tab" data-active={activePanel === "reads"} onClick={() => setActivePanel("reads")} title="읽음" type="button">
+          {canOpenRoomReadReport ? (
+            <button
+              className="panel-tab"
+              data-active={activePanel === "reads"}
+              onClick={() => {
+                if (selectedMessage && canFetchSelectedReadReport) {
+                  void openReadReport(selectedMessage);
+                } else {
+                  setReadReportRows(undefined);
+                  setActivePanel("reads");
+                }
+              }}
+              title="읽음"
+              type="button"
+            >
               <CheckCircle2 size={18} />
             </button>
           ) : null}
@@ -1362,6 +1716,7 @@ function ChatDesk({
             receivedInviteCode={receivedInviteCode}
             requiredApprovalCount={requiredApprovalCount}
             roomMembers={roomMembers}
+            readReportRows={readReportRows}
             selectedMessage={selectedMessage}
             selectedPdf={selectedPdf}
             sessions={sessions}
@@ -1410,6 +1765,7 @@ function PanelBody({
   onRevokeSession,
   receivedInviteCode,
   requiredApprovalCount,
+  readReportRows,
   roomMembers,
   selectedMessage,
   selectedPdf,
@@ -1452,15 +1808,28 @@ function PanelBody({
   onRevokeSession: (sessionId: string) => void;
   receivedInviteCode: string;
   requiredApprovalCount: number;
+  readReportRows: ReadReportRow[] | undefined;
   roomMembers: RoomMember[];
-  selectedMessage: Message;
+  selectedMessage: Message | undefined;
   selectedPdf: Attachment | undefined;
   sessions: DeviceSessionView[];
   users: User[];
   aiJobs: AiJob[];
 }) {
   if (activePanel === "reads") {
-    return <ReadPanel currentUser={currentUser} isConfirmingRead={isConfirmingRead} message={selectedMessage} onConfirmRead={onConfirmRead} users={users} />;
+    if (!selectedMessage) {
+      return <div className="panel-section panel-muted">읽음 상태를 확인할 메시지를 선택하세요.</div>;
+    }
+    return (
+      <ReadPanel
+        currentUser={currentUser}
+        isConfirmingRead={isConfirmingRead}
+        message={selectedMessage}
+        onConfirmRead={onConfirmRead}
+        reportRows={readReportRows}
+        users={users}
+      />
+    );
   }
 
   if (activePanel === "pdf") {
@@ -1781,15 +2150,17 @@ function ReadPanel({
   isConfirmingRead,
   message,
   onConfirmRead,
+  reportRows,
   users
 }: {
   currentUser: User;
   isConfirmingRead: boolean;
   message: Message;
   onConfirmRead: () => void;
+  reportRows: ReadReportRow[] | undefined;
   users: User[];
 }) {
-  const report = buildReadReport(message, users);
+  const report = reportRows ?? buildReadReport(message, users);
   const currentRead = report.find((row) => row.user.id === currentUser.id);
   const canConfirm = Boolean(message.metadata.requiresConfirmation && !currentRead?.confirmedAt);
 
@@ -1926,15 +2297,19 @@ function formatBytes(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-async function postJson<TResponse>(path: string, payload: Record<string, unknown>): Promise<TResponse> {
+async function requestJson<TResponse>(
+  path: string,
+  method: "POST" | "PATCH" | "DELETE",
+  payload?: Record<string, unknown>
+): Promise<TResponse> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
-    method: "POST",
+    method,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(payload ? { "Content-Type": "application/json" } : {}),
       "X-HahaTalk-Client": "web-v1"
     },
-    body: JSON.stringify(payload)
+    ...(payload ? { body: JSON.stringify(payload) } : {})
   });
 
   if (!response.ok) {
@@ -1942,6 +2317,10 @@ async function postJson<TResponse>(path: string, payload: Record<string, unknown
   }
 
   return response.json() as Promise<TResponse>;
+}
+
+async function postJson<TResponse>(path: string, payload: Record<string, unknown>): Promise<TResponse> {
+  return requestJson<TResponse>(path, "POST", payload);
 }
 
 async function getJson<TResponse>(path: string): Promise<TResponse> {
@@ -1991,6 +2370,21 @@ function attachPreviewUrl(message: Message, objectUrl: string): Message {
     ...message,
     attachments: message.attachments.map((attachment, index) => index === 0 ? { ...attachment, objectUrl } : attachment)
   };
+}
+
+function upsertMessage(messages: Message[], message: Message) {
+  const next = messages.some((candidate) => candidate.id === message.id)
+    ? messages.map((candidate) => candidate.id === message.id ? message : candidate)
+    : [...messages, message];
+  return next.sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+}
+
+function mergeOlderMessages(older: Message[], current: Message[]) {
+  const byId = new Map<string, Message>();
+  for (const message of [...older, ...current]) byId.set(message.id, message);
+  return [...byId.values()].sort(
+    (left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)
+  );
 }
 
 async function readApiError(response: Response) {

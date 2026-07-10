@@ -28,6 +28,23 @@ function isProcessRunning(pid) {
   }
 }
 
+async function isPortOpen(port) {
+  return new Promise((resolve) => {
+    if (!port) {
+      resolve(false);
+      return;
+    }
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const finish = (open) => {
+      socket.destroy();
+      resolve(open);
+    };
+    socket.setTimeout(700, () => finish(false));
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+  });
+}
+
 async function findAvailablePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -145,7 +162,7 @@ async function captureScreenshot(cdp, screenshotPath, message) {
   const capture = await cdp.send("Page.captureScreenshot", {
     captureBeyondViewport: false,
     format: "png",
-    fromSurface: true
+    fromSurface: false
   });
   await writeFile(screenshotPath, Buffer.from(capture.data, "base64"));
   assert((await readFile(screenshotPath)).length > 10_000, message);
@@ -161,11 +178,11 @@ const executablePath = path.resolve(argument(
 ));
 const screenshotPath = path.resolve(argument(
   "screenshot",
-  path.join(process.cwd(), "apps", "desktop", "out", "stage2b-owner-invitation.png")
+  path.join(process.cwd(), "apps", "desktop", "out", "stage3-owner-conversation.png")
 ));
 const guestScreenshotPath = path.resolve(argument(
   "guest-screenshot",
-  path.join(process.cwd(), "apps", "desktop", "out", "stage2b-guest.png")
+  path.join(process.cwd(), "apps", "desktop", "out", "stage3-guest.png")
 ));
 const password = process.env.HAHATALK_SMOKE_PASSWORD ?? "HahaTalk!Stage2";
 const guestEmail = `renderer-guest-${Date.now()}@example.test`;
@@ -251,6 +268,94 @@ try {
   `);
   assert(headerLayout.actionsInsideHeader, "Header actions overflow the authenticated workspace header.");
   assert(headerLayout.buttonTopSpread <= 1, "Header action buttons wrapped onto multiple rows.");
+
+  assert(
+    await evaluate(cdp, `document.querySelectorAll('.room-item').length === 3`),
+    "Persisted conversation list did not render all seeded spaces."
+  );
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.room-item')]
+      .find((button) => button.innerText.includes('인비즈 업무 단체방')).click()
+  `);
+  await waitForExpression(cdp, `document.querySelector('.room-title')?.textContent.includes('인비즈 업무 단체방')`, "Persisted group room did not open.");
+  await waitForExpression(cdp, `document.body.innerText.includes('실시간')`, "Socket.IO realtime state did not become online.");
+
+  const messageMarker = `Stage 3 renderer ${Date.now()}`;
+  const editedMarker = `${messageMarker} edited`;
+  const replyMarker = `${messageMarker} reply`;
+  const deleteMarker = `${messageMarker} delete`;
+  const setComposer = (value) => evaluate(cdp, `
+    (() => {
+      const textarea = document.querySelector('.composer-input');
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(textarea, ${JSON.stringify(value)});
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+    })()
+  `);
+  await setComposer(messageMarker);
+  await evaluate(cdp, `document.querySelector('button[title="보내기"]').click()`);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.message')].some((row) => row.innerText.includes(${JSON.stringify(messageMarker)}))`,
+    "Renderer did not display the persisted message."
+  );
+
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.message')]
+      .find((row) => row.innerText.includes(${JSON.stringify(messageMarker)}))
+      .querySelector('button[title="수정"]').click()
+  `);
+  await setComposer(editedMarker);
+  await evaluate(cdp, `document.querySelector('button[title="수정 저장"]').click()`);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.message')].some((row) => row.innerText.includes(${JSON.stringify(editedMarker)}) && row.innerText.includes('수정됨'))`,
+    "Renderer message edit did not persist."
+  );
+
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.message')]
+      .find((row) => row.innerText.includes(${JSON.stringify(editedMarker)}))
+      .querySelector('button[title="답장"]').click()
+  `);
+  await setComposer(replyMarker);
+  await evaluate(cdp, `document.querySelector('button[title="보내기"]').click()`);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.message')].some((row) => row.innerText.includes(${JSON.stringify(replyMarker)}) && row.querySelector('.reply-reference'))`,
+    "Renderer reply relationship did not render."
+  );
+
+  await evaluate(cdp, `
+    (() => {
+      const input = document.querySelector('.search-box input');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(editedMarker)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('.search-box').requestSubmit();
+    })()
+  `);
+  await waitForExpression(cdp, `document.querySelector('.search-result')?.innerText.includes(${JSON.stringify(editedMarker)})`, "Renderer delivery-scoped search failed.");
+
+  await setComposer(deleteMarker);
+  await evaluate(cdp, `document.querySelector('button[title="보내기"]').click()`);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.message')].some((row) => row.innerText.includes(${JSON.stringify(deleteMarker)}))`,
+    "Renderer delete fixture message was not stored."
+  );
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.message')]
+      .find((row) => row.innerText.includes(${JSON.stringify(deleteMarker)}))
+      .querySelector('button[title="삭제"]').click()
+  `);
+  await waitForExpression(
+    cdp,
+    `![...document.querySelectorAll('.message')].some((row) => row.innerText.includes(${JSON.stringify(deleteMarker)}))`,
+    "Renderer message delete did not remove the message."
+  );
 
   await evaluate(cdp, `document.querySelector('button[title="참여자"]').click()`);
   await waitForExpression(cdp, `document.body.innerText.includes('대상 초대')`, "Owner invitation panel did not open.");
@@ -373,6 +478,7 @@ try {
   }
   assert(statusRemoved, "HahaTalk runtime status remained after renderer smoke shutdown.");
   assert(!isProcessRunning(application.pid), "HahaTalk process remained after renderer smoke shutdown.");
+  assert(!(await isPortOpen(runtime.databasePort)), "Embedded PostgreSQL remained reachable after renderer smoke shutdown.");
   console.log(`Windows renderer invitation check passed: ${runtime.version}, owner ${screenshotPath}, guest ${guestScreenshotPath}`);
 } finally {
   cdp?.close();

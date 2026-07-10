@@ -24,6 +24,7 @@
     "desktop:renderer-smoke": "node tools/harness/windows-renderer-auth-smoke.mjs",
     "auth:integration": "node tools/harness/auth-persistence.mjs",
     "invitation:integration": "node tools/harness/invitation-consent.mjs",
+    "conversation:integration": "node tools/harness/conversation-persistence.mjs",
     "build": "npm run build -w packages/contracts && npm run build -w apps/api && npm run build -w apps/web && npm run build -w apps/desktop",
     "typecheck": "npm run typecheck -w packages/contracts && npm run typecheck -w apps/api && npm run typecheck -w apps/web && npm run typecheck -w apps/desktop",
     "test": "npm run test -w packages/contracts",

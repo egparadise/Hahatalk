@@ -45,7 +45,9 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Opaque HttpOnly/SameSite cookie sessions; only SHA-256 token digests are stored in `web_sessions`.
 - Authenticated `GET /auth/me`, `POST /auth/logout`, `GET /mvp`, and `GET /spaces/:spaceId/view` projection.
 - Exact-Origin and custom-header checks on state-changing browser requests.
-- API-backed `POST /messages` and `POST /attachments`.
+- PostgreSQL-backed `POST /messages`, reply/edit/delete/search, keyset pagination, and read/confirmation state.
+- Atomic idempotency records and one-recipient transactional outbox events, published to authenticated user-specific Socket.IO rooms.
+- `POST /attachments` remains a temporary metadata demo until the Stage 5 object-storage pipeline.
 - PostgreSQL-backed `/invitations` create/list/preview/accept/decline/decision/revoke state machine.
 - PostgreSQL-backed `/auth/sessions` list and session-revoke controls.
 - Delivery-based visibility and read confirmation through `POST /messages/:messageId/confirm`.
@@ -56,7 +58,7 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 ## Production Boundaries Still Required
 
 - Replace demo account claiming with invitation/email verification, passkeys or enterprise SSO, device-session management, and rate limiting.
-- Persist conversations through PostgreSQL transactions and publish through an outbox worker; messages and invitations are still demo-memory state.
+- Move the single-process outbox publisher to a leased multi-replica worker before horizontal API scaling.
 - Add Redis presence without exposing hub participants to one another.
 - Add signed multipart upload, virus scanning, metadata extraction, and media derivatives.
 - Add LiveKit token service, E2EE key policy, call state, and consented recording.

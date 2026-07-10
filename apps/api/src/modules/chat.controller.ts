@@ -1,19 +1,53 @@
-import { Body, Controller, ForbiddenException, Get, Inject, Param, Post } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query
+} from "@nestjs/common";
 import {
   type AudienceType,
   type CreateAttachmentMessageInput,
   type MemberRole,
-  type SendMessageInput
+  type SendConversationMessageInput
 } from "@hahatalk/contracts";
-import { IsArray, IsBoolean, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from "class-validator";
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  Min,
+  MinLength
+} from "class-validator";
 import { CurrentAuth, PublicRoute } from "../auth/auth.decorators.js";
 import type { AuthPrincipal } from "../auth/auth.types.js";
 import { DatabaseService } from "../database/database.service.js";
+import { ConversationService } from "./conversation.service.js";
 import { DemoStore } from "./demo-store.js";
 
 class SendMessageDto {
+  @IsUUID()
+  spaceId = "";
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(160)
+  clientMessageId = "";
+
   @IsString()
   @MinLength(1)
+  @MaxLength(10_000)
   body = "";
 
   @IsIn(["all", "selected", "private", "role"])
@@ -27,8 +61,19 @@ class SendMessageDto {
   @IsIn(["owner", "admin", "member", "guest", "subscriber"])
   targetRole?: MemberRole;
 
+  @IsOptional()
+  @IsUUID()
+  parentMessageId?: string;
+
   @IsBoolean()
   requiresConfirmation = false;
+}
+
+class EditMessageDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(10_000)
+  body = "";
 }
 
 class CreateAttachmentMessageDto {
@@ -65,6 +110,7 @@ class CreateAttachmentMessageDto {
 @Controller()
 export class ChatController {
   constructor(
+    private readonly conversations: ConversationService,
     @Inject(DemoStore) private readonly store: DemoStore,
     private readonly database: DatabaseService
   ) {}
@@ -81,36 +127,94 @@ export class ChatController {
   }
 
   @Get("mvp")
-  mvpSnapshot(@CurrentAuth() principal: AuthPrincipal) {
-    const viewerId = this.ensureViewer(principal);
-    return this.store.snapshot(viewerId);
+  mvpSnapshot(
+    @CurrentAuth() principal: AuthPrincipal,
+    @Query("spaceId") spaceId?: string,
+    @Query("before") before?: string,
+    @Query("limit") rawLimit?: string
+  ) {
+    return this.conversations.snapshot(principal, spaceId, before, this.parseLimit(rawLimit));
+  }
+
+  @Get("spaces")
+  listSpaces(@CurrentAuth() principal: AuthPrincipal) {
+    return this.conversations.listSpaces(principal);
   }
 
   @Get("spaces/:spaceId/view")
-  conversationView(@Param("spaceId") spaceId: string, @CurrentAuth() principal: AuthPrincipal) {
-    const viewerId = this.ensureViewer(principal);
-    return this.store.conversationView(viewerId, spaceId);
+  conversationView(
+    @Param("spaceId", ParseUUIDPipe) spaceId: string,
+    @CurrentAuth() principal: AuthPrincipal,
+    @Query("before") before?: string,
+    @Query("limit") rawLimit?: string
+  ) {
+    return this.conversations.conversationView(principal, spaceId, before, this.parseLimit(rawLimit));
+  }
+
+  @Get("spaces/:spaceId/search")
+  search(
+    @Param("spaceId", ParseUUIDPipe) spaceId: string,
+    @Query("q") query: string,
+    @CurrentAuth() principal: AuthPrincipal,
+    @Query("limit") rawLimit?: string
+  ) {
+    return this.conversations.search(principal, spaceId, query ?? "", this.parseLimit(rawLimit));
   }
 
   @Post("messages")
   sendMessage(@Body() body: SendMessageDto, @CurrentAuth() principal: AuthPrincipal) {
-    const senderId = this.ensureViewer(principal);
-    return this.store.sendMessage({ ...body, senderId } as SendMessageInput);
+    const input: SendConversationMessageInput = {
+      spaceId: body.spaceId,
+      clientMessageId: body.clientMessageId,
+      body: body.body,
+      audienceType: body.audienceType,
+      targetUserIds: body.targetUserIds,
+      ...(body.targetRole ? { targetRole: body.targetRole } : {}),
+      ...(body.parentMessageId ? { parentMessageId: body.parentMessageId } : {}),
+      requiresConfirmation: body.requiresConfirmation
+    };
+    return this.conversations.sendMessage(principal, input);
+  }
+
+  @Patch("messages/:messageId")
+  editMessage(
+    @Param("messageId", ParseUUIDPipe) messageId: string,
+    @Body() body: EditMessageDto,
+    @CurrentAuth() principal: AuthPrincipal
+  ) {
+    return this.conversations.editMessage(principal, messageId, body.body);
+  }
+
+  @Delete("messages/:messageId")
+  deleteMessage(
+    @Param("messageId", ParseUUIDPipe) messageId: string,
+    @CurrentAuth() principal: AuthPrincipal
+  ) {
+    return this.conversations.deleteMessage(principal, messageId);
+  }
+
+  @Post("messages/:messageId/read")
+  markRead(
+    @Param("messageId", ParseUUIDPipe) messageId: string,
+    @CurrentAuth() principal: AuthPrincipal
+  ) {
+    return this.conversations.markRead(principal, messageId, false);
   }
 
   @Get("messages/:messageId/read-report")
-  readReport(@Param("messageId") messageId: string, @CurrentAuth() principal: AuthPrincipal) {
-    if (!principal.state.permissions.canOpenReadReport) {
-      throw new ForbiddenException("Read report permission is required.");
-    }
-    const viewerId = this.ensureViewer(principal);
-    return this.store.readReport(messageId, viewerId);
+  readReport(
+    @Param("messageId", ParseUUIDPipe) messageId: string,
+    @CurrentAuth() principal: AuthPrincipal
+  ) {
+    return this.conversations.readReport(principal, messageId);
   }
 
   @Post("messages/:messageId/confirm")
-  confirmRead(@Param("messageId") messageId: string, @CurrentAuth() principal: AuthPrincipal) {
-    const userId = this.ensureViewer(principal);
-    return this.store.confirmRead(messageId, { userId });
+  confirmRead(
+    @Param("messageId", ParseUUIDPipe) messageId: string,
+    @CurrentAuth() principal: AuthPrincipal
+  ) {
+    return this.conversations.markRead(principal, messageId, true);
   }
 
   @Post("attachments")
@@ -118,12 +222,19 @@ export class ChatController {
     if (!principal.state.permissions.canUploadFiles) {
       throw new ForbiddenException("File upload permission is required.");
     }
-    const uploaderId = this.ensureViewer(principal);
+    this.store.ensureUser(principal.state.user, principal.state.role);
+    const uploaderId = principal.state.user.id;
     return this.store.createAttachmentMessage({ ...body, uploaderId } as CreateAttachmentMessageInput);
   }
 
-  private ensureViewer(principal: AuthPrincipal) {
-    this.store.ensureUser(principal.state.user, principal.state.role);
-    return principal.state.user.id;
+  private parseLimit(rawLimit?: string) {
+    if (rawLimit === undefined || rawLimit === "") {
+      return undefined;
+    }
+    const value = Number(rawLimit);
+    if (!Number.isInteger(value) || value < 1 || value > 100) {
+      throw new BadRequestException("Page limit must be an integer between 1 and 100.");
+    }
+    return value;
   }
 }

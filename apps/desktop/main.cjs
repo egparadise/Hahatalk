@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, desktopCapturer, dialog, screen, session, shell, utilityProcess } = require("electron");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
+const { randomBytes } = require("node:crypto");
 const http = require("node:http");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
@@ -30,6 +31,7 @@ let runtimeReady = false;
 let runtimeStatus = null;
 let shuttingDown = false;
 let quitCleanupStarted = false;
+let quitCleanupComplete = false;
 
 function runSquirrelCommand(args) {
   const updateExecutable = path.resolve(path.dirname(process.execPath), "..", "Update.exe");
@@ -83,6 +85,8 @@ function writeRuntimeStatus(nextRuntime, extra = {}) {
     packaged: app.isPackaged,
     webUrl: nextRuntime.webUrl,
     apiUrl: nextRuntime.apiUrl,
+    databaseMode: nextRuntime.databaseRuntime?.managed ? "embedded-postgresql" : "external",
+    databasePort: nextRuntime.databaseRuntime?.port ?? null,
     readyAt: runtimeStatus?.readyAt || new Date().toISOString(),
     ...runtimeStatus,
     ...extra
@@ -246,6 +250,144 @@ async function waitForHealth(url, attempts = 80) {
   throw lastError instanceof Error ? lastError : new Error("API health check timed out.");
 }
 
+function runExecutable(executable, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, {
+      env: { ...process.env, ...options.env },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true
+    });
+    const output = [];
+    child.stdout.on("data", (chunk) => output.push(String(chunk)));
+    child.stderr.on("data", (chunk) => output.push(String(chunk)));
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      const result = { code: code ?? -1, output: output.join("") };
+      if (!(options.acceptedExitCodes ?? [0]).includes(result.code)) {
+        reject(new Error(`${path.basename(executable)} failed with code ${result.code}: ${result.output.trim()}`));
+        return;
+      }
+      resolve(result);
+    });
+  });
+}
+
+async function readOrCreateDatabaseCredentials(dataDirectory) {
+  const credentialsPath = path.join(app.getPath("userData"), "postgres-credentials.json");
+  const initialized = fs.existsSync(path.join(dataDirectory, "PG_VERSION"));
+  try {
+    const credentials = JSON.parse(await fsp.readFile(credentialsPath, "utf8"));
+    if (credentials.user === "hahatalk" && typeof credentials.password === "string" && credentials.password.length >= 32) {
+      return credentials;
+    }
+  } catch {
+    if (initialized) {
+      throw new Error("Embedded PostgreSQL credentials are missing for an existing data directory.");
+    }
+  }
+
+  const credentials = { user: "hahatalk", password: randomBytes(32).toString("base64url") };
+  await fsp.mkdir(path.dirname(credentialsPath), { recursive: true });
+  await fsp.writeFile(credentialsPath, `${JSON.stringify(credentials)}\n`, { encoding: "utf8", mode: 0o600 });
+  return credentials;
+}
+
+async function startEmbeddedPostgres(runtimeRoot) {
+  const explicitDatabaseUrl = process.env.DATABASE_URL?.trim();
+  if (explicitDatabaseUrl) {
+    return { databaseUrl: explicitDatabaseUrl, managed: false };
+  }
+
+  const postgresRoot = path.join(runtimeRoot, "postgres");
+  const binaryDirectory = path.join(postgresRoot, "bin");
+  const pgCtl = path.join(binaryDirectory, "pg_ctl.exe");
+  const initdb = path.join(binaryDirectory, "initdb.exe");
+  const psql = path.join(binaryDirectory, "psql.exe");
+  const createdb = path.join(binaryDirectory, "createdb.exe");
+  for (const executable of [pgCtl, initdb, psql, createdb]) {
+    await fsp.access(executable);
+  }
+
+  const dataDirectory = path.join(app.getPath("userData"), "postgres-data");
+  const logDirectory = app.getPath("logs");
+  const logPath = path.join(logDirectory, "postgresql.log");
+  await fsp.mkdir(dataDirectory, { recursive: true });
+  await fsp.mkdir(logDirectory, { recursive: true });
+  const credentials = await readOrCreateDatabaseCredentials(dataDirectory);
+  const initialized = fs.existsSync(path.join(dataDirectory, "PG_VERSION"));
+
+  if (!initialized) {
+    const passwordPath = path.join(app.getPath("temp"), `hahatalk-postgres-${process.pid}.pw`);
+    await fsp.writeFile(passwordPath, credentials.password, { encoding: "ascii", mode: 0o600 });
+    try {
+      await runExecutable(initdb, [
+        "-D", dataDirectory,
+        "-U", credentials.user,
+        `--pwfile=${passwordPath}`,
+        "--auth-host=scram-sha-256",
+        "--auth-local=scram-sha-256",
+        "-E", "UTF8",
+        "--locale=C"
+      ]);
+    } finally {
+      await fsp.rm(passwordPath, { force: true });
+    }
+  }
+
+  const status = await runExecutable(pgCtl, ["-D", dataDirectory, "status"], { acceptedExitCodes: [0, 3] });
+  let port;
+  if (status.code === 0) {
+    const pidLines = (await fsp.readFile(path.join(dataDirectory, "postmaster.pid"), "utf8")).split(/\r?\n/);
+    port = Number(pidLines[3]);
+    if (!Number.isInteger(port) || port < 1) {
+      throw new Error("Embedded PostgreSQL reported an invalid port.");
+    }
+  } else {
+    port = await findAvailablePort();
+    await runExecutable(pgCtl, [
+      "-D", dataDirectory,
+      "-l", logPath,
+      "-o", `-p ${port} -h 127.0.0.1`,
+      "-w", "start"
+    ]);
+  }
+
+  const databaseEnv = { PGPASSWORD: credentials.password };
+  const exists = await runExecutable(psql, [
+    "-h", "127.0.0.1",
+    "-p", String(port),
+    "-U", credentials.user,
+    "-d", "postgres",
+    "-tAc", "select 1 from pg_database where datname = 'hahatalk'"
+  ], { env: databaseEnv });
+  if (exists.output.trim() !== "1") {
+    await runExecutable(createdb, [
+      "-h", "127.0.0.1",
+      "-p", String(port),
+      "-U", credentials.user,
+      "hahatalk"
+    ], { env: databaseEnv });
+  }
+
+  const databaseUrl = `postgresql://${credentials.user}:${encodeURIComponent(credentials.password)}@127.0.0.1:${port}/hahatalk`;
+  appendRuntimeLog(`Embedded PostgreSQL is ready on 127.0.0.1:${port}.`);
+  return { databaseUrl, dataDirectory, managed: true, pgCtl, port };
+}
+
+async function stopEmbeddedPostgres(databaseRuntime) {
+  if (!databaseRuntime?.managed) return;
+  try {
+    await runExecutable(
+      databaseRuntime.pgCtl,
+      ["-D", databaseRuntime.dataDirectory, "-m", "fast", "-w", "stop"],
+      { acceptedExitCodes: [0, 3] }
+    );
+    appendRuntimeLog("Embedded PostgreSQL stopped cleanly.");
+  } catch (error) {
+    appendRuntimeLog(`Embedded PostgreSQL shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function pipeApiLogs(apiProcess) {
   apiProcess.stdout?.on("data", (chunk) => appendRuntimeLog(`[api] ${String(chunk).trimEnd()}`));
   apiProcess.stderr?.on("data", (chunk) => appendRuntimeLog(`[api:error] ${String(chunk).trimEnd()}`));
@@ -258,7 +400,7 @@ function pipeApiLogs(apiProcess) {
   });
 }
 
-async function startPackagedApi(apiEntryPath, webOrigin) {
+async function startPackagedApi(apiEntryPath, webOrigin, databaseUrl) {
   let lastError = null;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     const port = await findAvailablePort();
@@ -266,6 +408,7 @@ async function startPackagedApi(apiEntryPath, webOrigin) {
     const apiProcess = utilityProcess.fork(apiEntryPath, [], {
       env: {
         ...process.env,
+        DATABASE_URL: databaseUrl,
         HAHATALK_MIGRATIONS_DIR: path.join(path.dirname(apiEntryPath), "migrations"),
         NODE_ENV: "production",
         PORT: String(port),
@@ -302,17 +445,20 @@ async function startRuntime() {
   }
 
   const runtimeRoot = path.join(process.resourcesPath, "runtime");
+  const databaseRuntime = await startEmbeddedPostgres(runtimeRoot);
   const staticRuntime = await startStaticServer(path.join(runtimeRoot, "web"));
   try {
-    const apiRuntime = await startPackagedApi(path.join(runtimeRoot, "api.cjs"), staticRuntime.url);
+    const apiRuntime = await startPackagedApi(path.join(runtimeRoot, "api.cjs"), staticRuntime.url, databaseRuntime.databaseUrl);
     return {
       apiProcess: apiRuntime.apiProcess,
       apiUrl: apiRuntime.apiUrl,
+      databaseRuntime,
       staticServer: staticRuntime.server,
       webUrl: staticRuntime.url
     };
   } catch (error) {
     await closeServer(staticRuntime.server);
+    await stopEmbeddedPostgres(databaseRuntime);
     throw error;
   }
 }
@@ -493,7 +639,9 @@ async function stopRuntime() {
     window.destroy();
   }
   runtime?.apiProcess?.kill();
+  await delay(250);
   await closeServer(runtime?.staticServer);
+  await stopEmbeddedPostgres(runtime?.databaseRuntime);
   runtime = null;
 }
 
@@ -516,15 +664,19 @@ if (squirrelStartup) {
     });
 
     app.on("before-quit", (event) => {
-      if (quitCleanupStarted) return;
+      if (quitCleanupComplete) return;
       event.preventDefault();
+      if (quitCleanupStarted) return;
       quitCleanupStarted = true;
       shuttingDown = true;
-      void stopRuntime().finally(() => app.quit());
+      void stopRuntime().finally(() => {
+        quitCleanupComplete = true;
+        app.quit();
+      });
     });
 
     app.on("window-all-closed", () => {
-      if (process.platform !== "darwin") app.quit();
+      if (process.platform !== "darwin" && !quitCleanupStarted) app.quit();
     });
 
     app.whenReady().then(async () => {
@@ -545,7 +697,9 @@ if (squirrelStartup) {
         appendRuntimeLog(`Desktop startup failed: ${message}`);
         dialog.showErrorBox("HahaTalk 시작 실패", "내부 서비스를 시작하지 못했습니다. 로그를 확인한 뒤 다시 실행해 주세요.");
         shuttingDown = true;
+        quitCleanupStarted = true;
         await stopRuntime();
+        quitCleanupComplete = true;
         app.quit();
       }
     });

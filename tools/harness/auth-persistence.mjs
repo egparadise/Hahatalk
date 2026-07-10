@@ -176,12 +176,14 @@ async function verifyAuthenticatedSocket(baseUrl, webOrigin, cookie, expectedUse
       socket.timeout(3_000).emit("message:send", {
         audienceType: "private",
         body: "Authenticated Socket.IO sender boundary",
+        clientMessageId: `auth-socket-${randomUUID()}`,
         requiresConfirmation: false,
         senderId: "user-you",
+        spaceId: snapshot.room.roomId,
         targetUserIds: ["user-you"]
       }, (error, response) => error ? reject(error) : resolve(response));
     });
-    assert(message.senderId === expectedUserId, "Socket.IO message trusted a client senderId.");
+    assert(message.message.senderId === expectedUserId, "Socket.IO message trusted a client senderId.");
   } finally {
     socket.close();
   }
@@ -247,13 +249,15 @@ try {
     payload: {
       audienceType: "private",
       body: "Authenticated sender boundary",
+      clientMessageId: `auth-boundary-${randomUUID()}`,
       requiresConfirmation: false,
       senderId: "user-you",
+      spaceId: spoofedSnapshot.body.room.roomId,
       targetUserIds: ["user-you"]
     }
   });
   assert(spoofedMessage.response.status === 201, "Authenticated message send failed.");
-  assert(spoofedMessage.body.senderId === me.body.user.id, "Message senderId was accepted from the client body.");
+  assert(spoofedMessage.body.message.senderId === me.body.user.id, "Message senderId was accepted from the client body.");
   await verifyAuthenticatedSocket(baseUrl, webOrigin, cookie, me.body.user.id);
 
   const wrongPassword = await request(baseUrl, "/auth/login", {

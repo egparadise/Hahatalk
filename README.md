@@ -6,22 +6,24 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 
 - PostgreSQL-backed signup/login with Argon2id passwords and character selection.
 - Opaque HttpOnly cookie sessions whose SHA-256 digests, expiry, revocation, and audit events persist across API restarts.
-- Authenticated hub snapshot and `POST /messages`; client-supplied viewer/sender IDs are ignored.
+- PostgreSQL-backed 1:1, open-group, and private-hub timelines with keyset pagination; client-supplied viewer/sender IDs are ignored.
 - One-time invitation codes whose SHA-256 digests, expiry, use count, approval snapshot, invitee decision, and audit events persist in PostgreSQL.
 - Owner/admin/all-member/quorum approval policies, guest acceptance with terms/privacy/group consent, and manager revoke.
 - Device-session list, single-session revoke, revoke-other-sessions, and rate-limited login/invitation endpoints.
-- API-backed attachment metadata for files, photos, PDFs, videos, and screen captures.
+- Attachment metadata preview remains a temporary demo boundary until Stage 5 object storage is connected.
 - API-backed confirmation action for important read-report messages.
 - Hub owner chat with `All`, `Selected`, and `Private` audience modes.
 - Participant-safe projection that presents the same hub as a normal 1:1 owner conversation.
 - Per-recipient `message_deliveries` and authenticated user-specific Socket.IO channels that prevent hub roster/message leakage.
+- Atomic idempotency keys and one-recipient outbox events for retry-safe message creation and realtime projection.
+- Persisted reply, edit, delete, search, read time, and explicit confirmation flows.
 - Internal and guest invite affordances with guest-safe permission labels.
 - File/photo/PDF/video metadata previews.
 - Screen capture share flow for PC browsers/desktops that support `getDisplayMedia`.
 - Read report panel with read time, unread users, and confirmation state.
 - Pop-out window affordances for chat and document views.
 - Async AI/STT/TTS placeholders that do not block chat.
-- A Windows x64 package and Squirrel installer that start without Node.js, npm, or separate development servers.
+- A Windows x64 package and Squirrel installer that include a managed PostgreSQL 18.4 runtime and start without Node.js, npm, Docker, or separate development servers.
 - Single-instance protection, dynamic loopback ports, runtime health evidence, secure navigation, and clean API shutdown.
 
 ## Commands
@@ -44,6 +46,7 @@ npm run smoke
 npm run schema:check
 npm run auth:integration
 npm run invitation:integration
+npm run conversation:integration
 npm run harness
 ```
 
@@ -81,4 +84,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/windows-desktop-runtime.md`: packaged Windows startup, security, build, and runtime verification.
 - `docs/stage-2-auth-persistence.md`: Stage 2A database, password, cookie, migration, and restart-test contract.
 - `docs/stage-2b-invitations-consent.md`: Stage 2B invitation state machine, guest approval, consent evidence, API, and tests.
+- `docs/stage-3-persisted-conversations.md`: Stage 3 conversation schema, privacy projection, idempotency, outbox, API, and test contract.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

@@ -95,7 +95,8 @@ const governanceFiles = [
   ".codex/agents/privacy-reviewer.toml",
   ".codex/agents/feature-worker.toml",
   "apps/api/migrations/001_auth_foundation.sql",
-  "apps/api/migrations/002_invitation_consent_guest_approval.sql"
+  "apps/api/migrations/002_invitation_consent_guest_approval.sql",
+  "apps/api/migrations/003_persisted_conversation_core.sql"
 ];
 
 for (const file of governanceFiles) {

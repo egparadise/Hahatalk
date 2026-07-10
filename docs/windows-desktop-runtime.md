@@ -2,31 +2,33 @@
 
 ## Goal
 
-HahaTalk must start from an installed Windows executable without requiring Node.js, npm, the source repository, or separately started web/API development servers. The Stage 2 development package requires a reachable PostgreSQL service; production distribution will point the desktop client at the managed HahaTalk backend rather than installing a database on every user PC.
+HahaTalk must start from an installed Windows executable without requiring Node.js, npm, the source repository, or separately started web/API/database development servers. The PC-first development package includes PostgreSQL 18.4 server binaries and manages a per-user local database. A later multi-device release will use the managed HahaTalk backend instead of a database on every client.
 
 ## Runtime Layout
 
 ```text
 HahaTalk.exe
  -> Electron main process
+ -> embedded PostgreSQL on an ephemeral loopback port
  -> loopback static server on an ephemeral port
  -> NestJS API bundle in Electron utilityProcess on another ephemeral port
  -> sandboxed renderer with context-isolated preload bridge
 ```
 
-The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJS API is bundled from TypeScript output so decorator metadata remains intact. Generated assets, immutable SQL migrations, and the Windows Argon2 native runtime are copied to `resources/runtime` outside `app.asar`; source code and unrelated development dependencies are not copied.
+The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJS API is bundled from TypeScript output so decorator metadata remains intact. Generated assets, immutable SQL migrations, PostgreSQL `bin/lib/share`, and the Windows Argon2 native runtime are copied to `resources/runtime` outside `app.asar`; source code, pgAdmin, headers, and unrelated development dependencies are not copied.
 
 ## Startup Sequence
 
 1. Handle Squirrel install, update, uninstall, or obsolete events.
 2. Acquire the single-instance lock.
-3. Start the static server on `127.0.0.1` with an operating-system-assigned port.
-4. Start the API in `utilityProcess` with a separate available loopback port.
-5. Apply checksum-verified PostgreSQL migrations, then poll `/health`; retry API startup once on failure.
-6. Pass the resolved API URL to the renderer through `additionalArguments` and `contextBridge`.
-7. Write `%APPDATA%/HahaTalk/runtime-status.json` as runtime verification evidence.
-8. Verify from the renderer that the preload-provided API URL answers `/health`.
-9. Create a window sized to the current Windows work area.
+3. Initialize the per-user PostgreSQL data directory and random local password on first run.
+4. Start embedded PostgreSQL on an operating-system-assigned loopback port and create the `hahatalk` database if needed.
+5. Start the static server on `127.0.0.1` with another operating-system-assigned port.
+6. Start the API in `utilityProcess` with a separate available loopback port and a generated database URL.
+7. Apply checksum-verified PostgreSQL migrations, then poll `/health`; retry API startup once on failure.
+8. Pass the resolved API URL to the renderer through `additionalArguments` and `contextBridge`.
+9. Write `%APPDATA%/HahaTalk/runtime-status.json` as runtime verification evidence without database credentials.
+10. Verify from the renderer that the preload-provided API URL answers `/health`, then create the window.
 
 ## Security Boundary
 
@@ -38,6 +40,7 @@ The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJ
 - Screen capture requires a user gesture and a local source-selection dialog.
 - The API is isolated from the renderer in Electron `utilityProcess`.
 - The renderer receives only an opaque HttpOnly cookie; authentication responses and preload APIs never expose the session token.
+- The embedded database binds only to loopback, uses a random SCRAM password, stores credentials with the per-user runtime state, and stops after the API during clean shutdown.
 
 ## Build Commands
 
@@ -61,19 +64,19 @@ apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe
 - packaged executable starts with ports 3000 and 4000 closed
 - status file reports `packaged: true`
 - status file reports `rendererReady: true` and `rendererApiHealthy: true`
-- API `/health` proves PostgreSQL connectivity
+- API `/health` proves embedded PostgreSQL connectivity without port 54329 or another external database process
 - authenticated owner projection returns four demo users and authenticated participant projection returns only two even with a forged `viewerId`
 - second executable invocation exits and leaves one main window
-- normal window close removes the status file and closes the API port
+- normal window close removes the status file and closes the API and embedded database ports
 - installed executable runs from `%LOCALAPPDATA%/HahaTalk/app-<version>`
 - production dependency audit reports zero vulnerabilities
 
 ## Release Limitations
 
 - The current installer is unsigned. Windows code signing is required before external distribution to avoid trust warnings and to support a production update channel.
-- Accounts, Argon2id password hashes, sessions, invitations, approval requirements/decisions, consent evidence, and auth audit events persist in PostgreSQL. Conversation and attachment mutations remain in-memory until Stage 3.
-- Runtime manifest version 3 records a SHA-256 entry for every immutable SQL migration, including Stage 2B migration `002`.
-- The Stage 2 development installer needs local PostgreSQL on port 54329. This is a development topology, not the production end-user architecture.
+- Accounts, sessions, invitations, consent evidence, conversations, deliveries, read state, idempotency, and outbox events persist in embedded PostgreSQL. Binary attachment storage remains a Stage 5 boundary.
+- Runtime manifest version 4 records every immutable SQL migration and SHA-256 fingerprints for `pg_ctl.exe` and `initdb.exe`.
+- The embedded database is a PC-first single-device topology. Multi-device sync and horizontal scaling require the managed server deployment.
 - The installer currently targets Windows x64. ARM64 is a later build target.
 - Screen capture uses a name-based local selector; thumbnail selection and per-window consent history can be improved later.
 

@@ -13,7 +13,7 @@ async function bootstrap() {
   app.enableCors({
     allowedHeaders: ["Content-Type", hahaTalkClientHeader],
     credentials: true,
-    methods: ["GET", "HEAD", "POST", "OPTIONS"],
+    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
     origin: webOrigin
   });
   app.use(createOriginPolicy(webOrigin));

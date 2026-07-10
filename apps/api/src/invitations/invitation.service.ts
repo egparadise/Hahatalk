@@ -644,6 +644,37 @@ export class InvitationService {
       "update users set status = 'active', updated_at = now() where id = $1",
       [invitation.invitee_user_id]
     );
+    const defaultHub = await client.query<{ id: string; owner_id: string }>(
+      `select id, owner_id
+       from conversation_spaces
+       where organization_id = $1 and type = 'hub' and archived_at is null
+         and (settings_json ->> 'isDefault')::boolean is true
+       order by created_at
+       limit 1`,
+      [invitation.organization_id]
+    );
+    const hub = defaultHub.rows[0];
+    if (hub) {
+      await client.query(
+        `insert into space_memberships (space_id, user_id, role, view_mode, status, joined_at)
+         values ($1, $2, $3, 'direct_with_owner', 'active', now())
+         on conflict (space_id, user_id) do update
+         set role = excluded.role,
+             view_mode = 'direct_with_owner',
+             status = 'active',
+             joined_at = coalesce(space_memberships.joined_at, excluded.joined_at)`,
+        [hub.id, invitation.invitee_user_id, invitation.requested_role]
+      );
+      if (hub.owner_id !== invitation.invitee_user_id) {
+        await client.query(
+          `insert into hub_spokes (space_id, owner_id, participant_id)
+           values ($1, $2, $3)
+           on conflict (space_id, participant_id) do update
+           set owner_id = excluded.owner_id, archived_at = null`,
+          [hub.id, hub.owner_id, invitation.invitee_user_id]
+        );
+      }
+    }
     await client.query(
       `update invitations set status = 'accepted', activated_at = now(), updated_at = now() where id = $1`,
       [invitation.id]

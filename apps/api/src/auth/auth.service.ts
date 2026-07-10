@@ -14,6 +14,7 @@ import {
 } from "@hahatalk/contracts";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service.js";
+import { defaultHubSpaceId } from "../modules/conversation.constants.js";
 import { readSessionToken } from "./auth-cookie.js";
 import { hashPassword, passwordNeedsRehash, verifyPassword } from "./password.js";
 import type { AuthPrincipal, CreatedAuthSession } from "./auth.types.js";
@@ -105,6 +106,12 @@ export class AuthService {
              where user_id = $1 and organization_id = $2`,
             [account.internal_user_id, account.organization_id]
           );
+          await this.ensureDefaultHubMembership(
+            client,
+            account.organization_id,
+            account.internal_user_id,
+            account.role
+          );
           await this.upsertProfile(client, account.internal_user_id, character.id);
           await this.writeAudit(client, account.organization_id, account.internal_user_id, "auth.account_claimed", account.internal_user_id);
           return account.public_id;
@@ -127,6 +134,7 @@ export class AuthService {
            values ($1, $2, 'member', 'active', now())`,
           [organizationId, internalUserId]
         );
+        await this.ensureDefaultHubMembership(client, organizationId, internalUserId, "member");
         await this.upsertProfile(client, internalUserId, character.id);
         await this.writeAudit(client, organizationId, internalUserId, "auth.account_created", internalUserId);
         return nextPublicId;
@@ -361,7 +369,7 @@ export class AuthService {
       state: createAuthSession(
         user,
         row.role,
-        demoRoom.id,
+        defaultHubSpaceId,
         toIso(row.session_created_at),
         demoRoom,
         toIso(row.expires_at)
@@ -405,6 +413,44 @@ export class AuthService {
            updated_at = now()`,
       [internalUserId, characterId]
     );
+  }
+
+  private async ensureDefaultHubMembership(
+    client: PoolClient,
+    memberOrganizationId: string,
+    internalUserId: string,
+    role: MemberRole
+  ) {
+    const hub = await client.query<{ id: string; owner_id: string }>(
+      `select id, owner_id
+       from conversation_spaces
+       where organization_id = $1 and type = 'hub' and archived_at is null
+         and (settings_json ->> 'isDefault')::boolean is true
+       order by created_at
+       limit 1`,
+      [memberOrganizationId]
+    );
+    const space = hub.rows[0];
+    if (!space) {
+      return;
+    }
+    const isOwner = space.owner_id === internalUserId;
+    await client.query(
+      `insert into space_memberships (space_id, user_id, role, view_mode, status, joined_at)
+       values ($1, $2, $3, $4, 'active', now())
+       on conflict (space_id, user_id) do update
+       set role = excluded.role, view_mode = excluded.view_mode, status = 'active'`,
+      [space.id, internalUserId, isOwner ? "owner" : role, isOwner ? "owner_console" : "direct_with_owner"]
+    );
+    if (!isOwner) {
+      await client.query(
+        `insert into hub_spokes (space_id, owner_id, participant_id)
+         values ($1, $2, $3)
+         on conflict (space_id, participant_id) do update
+         set owner_id = excluded.owner_id, archived_at = null`,
+        [space.id, space.owner_id, internalUserId]
+      );
+    }
   }
 
   private writeAudit(

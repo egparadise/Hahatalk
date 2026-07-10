@@ -17,6 +17,18 @@ function Get-LiveStatus {
   return $null
 }
 
+function Test-TcpPort {
+  param([int]$Port)
+  if (!$Port) { return $false }
+  $client = [System.Net.Sockets.TcpClient]::new()
+  try {
+    $task = $client.ConnectAsync("127.0.0.1", $Port)
+    return $task.Wait(700) -and $client.Connected
+  }
+  catch { return $false }
+  finally { $client.Dispose() }
+}
+
 function Wait-RuntimeStatus {
   param([int]$ExpectedPid, [datetime]$StartedAt)
 
@@ -66,6 +78,9 @@ function Stop-HahaTalk {
   }
   Start-Sleep -Milliseconds 500
   if (Test-Path -LiteralPath $statusPath) { throw "HahaTalk runtime status was not removed." }
+  if ($Status.databaseMode -eq "embedded-postgresql" -and (Test-TcpPort -Port $Status.databasePort)) {
+    throw "HahaTalk embedded PostgreSQL remained reachable after shutdown."
+  }
 
   try {
     Invoke-RestMethod -Uri "$apiUrl/health" -TimeoutSec 1 | Out-Null
@@ -120,8 +135,8 @@ $participantSession = New-AuthenticatedSession -ApiUrl $status.apiUrl -WebOrigin
 $owner = Invoke-RestMethod -Uri "$($status.apiUrl)/mvp" -WebSession $ownerSession
 $participant = Invoke-RestMethod -Uri "$($status.apiUrl)/mvp?viewerId=user-you" -WebSession $participantSession
 
-if (!$status.packaged -or !$status.rendererApiHealthy -or !$health.ok) { throw "Packaged runtime health verification failed." }
-if ($owner.room.mode -ne "hub_owner" -or @($owner.users).Count -ne 4) { throw "Owner projection verification failed." }
+if (!$status.packaged -or !$status.rendererApiHealthy -or !$health.ok -or $status.databaseMode -ne "embedded-postgresql") { throw "Packaged runtime health verification failed." }
+if ($owner.room.mode -ne "hub_owner" -or @($owner.users).Count -lt 4) { throw "Owner projection verification failed." }
 if ($participant.room.mode -ne "direct" -or @($participant.users).Count -ne 2) { throw "Participant projection verification failed." }
 
 $second = Start-Process -FilePath $resolvedExecutable -PassThru -WindowStyle Hidden
@@ -147,6 +162,7 @@ if ($LeaveRunning) {
   Version = $status.version
   RendererReady = $status.rendererReady
   ApiHealthy = $health.ok
+  DatabaseMode = $status.databaseMode
   OwnerUsers = @($owner.users).Count
   ParticipantUsers = @($participant.users).Count
   SingleInstance = $true

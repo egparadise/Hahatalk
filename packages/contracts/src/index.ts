@@ -266,6 +266,17 @@ export interface SendMessageInput {
   requiresConfirmation?: boolean;
 }
 
+export interface SendConversationMessageInput {
+  spaceId: string;
+  clientMessageId: string;
+  body: string;
+  audienceType: AudienceType;
+  targetUserIds: string[];
+  targetRole?: MemberRole;
+  parentMessageId?: string;
+  requiresConfirmation?: boolean;
+}
+
 export interface CreateInviteInput {
   email: string;
   role: "member" | "guest";
@@ -312,12 +323,34 @@ export interface ConversationView {
   users: User[];
   roomMembers: RoomMember[];
   messages: Message[];
+  hasMore?: boolean;
+  nextCursor?: string;
+}
+
+export interface ConversationListItem {
+  room: RoomPresentation;
+  unreadCount: number;
+  lastMessageAt?: string;
+  lastMessagePreview?: string;
 }
 
 export interface MvpSnapshot extends ConversationView {
   organization: Organization;
   aiJobs: AiJob[];
   invites: Invite[];
+  spaces?: ConversationListItem[];
+}
+
+export interface MessageDeleteResult {
+  id: string;
+  deletedAt: string;
+}
+
+export interface TypingUpdate {
+  spaceId: string;
+  userId: string;
+  displayName: string;
+  active: boolean;
 }
 
 export interface MessageDeliveryPlan {

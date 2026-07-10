@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -11,6 +11,7 @@ const repoRoot = path.resolve(desktopRoot, "..", "..");
 const runtimeRoot = path.join(desktopRoot, "runtime");
 const webRuntimeRoot = path.join(runtimeRoot, "web");
 const runtimeNodeModulesRoot = path.join(runtimeRoot, "node_modules");
+const postgresRuntimeRoot = path.join(runtimeRoot, "postgres");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 function runNpm(args) {
@@ -67,6 +68,19 @@ await cp(
   { recursive: true }
 );
 
+const postgresSourceRoot = process.env.HAHATALK_POSTGRES_ROOT
+  ?? path.join(process.env.LOCALAPPDATA ?? "", "HahaTalkDev", "PostgreSQL", "18.4", "pgsql");
+for (const directory of ["bin", "lib", "share"]) {
+  const source = path.join(postgresSourceRoot, directory);
+  await access(source);
+  await cp(source, path.join(postgresRuntimeRoot, directory), { recursive: true });
+}
+for (const licenseName of ["server_license.txt", "commandlinetools_3rd_party_licenses.txt"]) {
+  const source = path.join(postgresSourceRoot, licenseName);
+  await access(source);
+  await cp(source, path.join(postgresRuntimeRoot, licenseName));
+}
+
 const indexPath = path.join(webRuntimeRoot, "index.html");
 const migrationRoot = path.join(runtimeRoot, "migrations");
 const migrationNames = (await readdir(migrationRoot))
@@ -80,7 +94,12 @@ const manifest = {
   generatedAt: new Date().toISOString(),
   indexSha256: await sha256(indexPath),
   migrationSha256,
-  runtimeVersion: 3
+  postgres: {
+    initdbSha256: await sha256(path.join(postgresRuntimeRoot, "bin", "initdb.exe")),
+    pgCtlSha256: await sha256(path.join(postgresRuntimeRoot, "bin", "pg_ctl.exe")),
+    version: "18.4"
+  },
+  runtimeVersion: 4
 };
 await writeFile(path.join(runtimeRoot, "runtime-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 

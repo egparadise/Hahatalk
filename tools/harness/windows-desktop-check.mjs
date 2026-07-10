@@ -39,6 +39,8 @@ const assertions = [
   [mainSource.includes("runtime-status.json"), "packaged runtime status evidence is required"],
   [mainSource.includes("rendererApiHealthy"), "renderer-to-API bridge verification is required"],
   [mainSource.includes("HAHATALK_MIGRATIONS_DIR"), "packaged API migrations path is required"],
+  [mainSource.includes("startEmbeddedPostgres"), "packaged runtime must start embedded PostgreSQL"],
+  [mainSource.includes("stopEmbeddedPostgres"), "packaged runtime must stop embedded PostgreSQL"],
   [mainSource.includes("hahatalk_desktop_session"), "desktop cookie namespace is required"],
   [preloadSource.includes("hahatalk-api-url"), "preload must expose the runtime API URL"],
   [preloadSource.includes("contextBridge"), "preload must use contextBridge"]
@@ -54,6 +56,10 @@ if (requireRuntime) {
     path.join(desktopRoot, "runtime", "runtime-manifest.json"),
     path.join(desktopRoot, "runtime", "migrations", "001_auth_foundation.sql"),
     path.join(desktopRoot, "runtime", "migrations", "002_invitation_consent_guest_approval.sql"),
+    path.join(desktopRoot, "runtime", "migrations", "003_persisted_conversation_core.sql"),
+    path.join(desktopRoot, "runtime", "postgres", "bin", "initdb.exe"),
+    path.join(desktopRoot, "runtime", "postgres", "bin", "pg_ctl.exe"),
+    path.join(desktopRoot, "runtime", "postgres", "server_license.txt"),
     path.join(desktopRoot, "runtime", "node_modules", "argon2", "argon2.cjs"),
     path.join(desktopRoot, "runtime", "web", "index.html")
   ];
