@@ -3,6 +3,7 @@ import {
   buildReadReport,
   createAuthSession,
   createMessageAudience,
+  createMessageDeliveryPlan,
   demoAiJobs,
   demoMessages,
   demoOrganization,
@@ -13,11 +14,13 @@ import {
   createDemoStorageKey,
   confirmMessageRead,
   getMessageTypeForMime,
+  getRoomPresentationForViewer,
   isValidEmail,
   normalizeEmail,
-  type AudienceType,
+  projectMessageForViewer,
   type AuthSession,
   type ConfirmMessageReadInput,
+  type ConversationView,
   type LoginInput,
   type Message,
   type MvpSnapshot,
@@ -38,15 +41,38 @@ export class DemoStore {
   private readonly invites: Invite[] = [];
   private readonly sessions: AuthSession[] = [];
 
-  snapshot(): MvpSnapshot {
+  snapshot(viewerId = demoRoom.ownerId): MvpSnapshot {
+    const view = this.conversationView(viewerId);
+    const isOwner = viewerId === demoRoom.ownerId;
+
     return {
       organization: demoOrganization,
-      room: demoRoom,
-      users: this.users,
-      roomMembers: this.roomMembers,
-      messages: this.messages,
-      aiJobs: demoAiJobs,
-      invites: this.invites
+      ...view,
+      aiJobs: isOwner ? demoAiJobs : demoAiJobs.filter((job) => job.requestedBy === viewerId),
+      invites: isOwner ? this.invites : []
+    };
+  }
+
+  conversationView(viewerId: string, roomId = demoRoom.id): ConversationView {
+    if (roomId !== demoRoom.id) {
+      throw new NotFoundException("Conversation not found.");
+    }
+
+    if (!this.roomMembers.some((member) => member.roomId === demoRoom.id && member.userId === viewerId)) {
+      throw new NotFoundException("Conversation membership not found.");
+    }
+
+    const room = getRoomPresentationForViewer(demoRoom, this.roomMembers, this.users, viewerId);
+    const visibleMemberIds = new Set(room.visibleMemberIds);
+    const messages = this.messages
+      .map((message) => projectMessageForViewer(message, demoRoom, this.roomMembers, viewerId))
+      .filter((message): message is Message => Boolean(message));
+
+    return {
+      room,
+      users: this.users.filter((user) => visibleMemberIds.has(user.id)),
+      roomMembers: this.roomMembers.filter((member) => visibleMemberIds.has(member.userId)),
+      messages
     };
   }
 
@@ -73,7 +99,7 @@ export class DemoStore {
     };
 
     this.users[0] = user;
-    const session = createAuthSession(user, this.getMemberRole(user.id), demoRoom.id);
+    const session = createAuthSession(user, this.getMemberRole(user.id), demoRoom.id, undefined, demoRoom);
     this.sessions.push(session);
 
     return session;
@@ -92,7 +118,7 @@ export class DemoStore {
       throw new NotFoundException("No HahaTalk user exists for this email.");
     }
 
-    const session = createAuthSession(user, this.getMemberRole(user.id), demoRoom.id);
+    const session = createAuthSession(user, this.getMemberRole(user.id), demoRoom.id, undefined, demoRoom);
     this.sessions.push(session);
 
     return session;
@@ -107,16 +133,38 @@ export class DemoStore {
 
     const id = `msg-${Date.now()}`;
     const now = new Date().toISOString();
+    const plan = createMessageDeliveryPlan(
+      demoRoom,
+      this.roomMembers,
+      id,
+      input.senderId,
+      input.audienceType,
+      input.targetUserIds,
+      now,
+      input.targetRole
+    );
+
+    if (plan.normalizedAudienceType !== "all" && plan.normalizedTargetUserIds.length === 0) {
+      throw new BadRequestException("At least one valid message target is required.");
+    }
+
     const message: Message = {
       id,
       roomId: demoRoom.id,
       senderId: input.senderId,
       messageType: "text",
+      deliveryMode: plan.deliveryMode,
       body,
       metadata: input.requiresConfirmation ? { requiresConfirmation: true } : {},
       createdAt: now,
-      audiences: createMessageAudience(id, input.audienceType, input.senderId, input.targetUserIds),
-      reads: [{ messageId: id, userId: input.senderId, readAt: now }],
+      audiences: createMessageAudience(
+        id,
+        plan.normalizedAudienceType,
+        input.senderId,
+        plan.normalizedTargetUserIds,
+        input.targetRole
+      ),
+      deliveries: plan.deliveries,
       attachments: []
     };
 
@@ -137,7 +185,9 @@ export class DemoStore {
       invitedBy: input.invitedBy,
       email,
       role: input.role,
-      status: "sent",
+      status: "pending_approval",
+      approvalPolicy: input.approvalPolicy ?? "admins_and_invitee",
+      requiredApprovalCount: input.approvalPolicy === "owner_and_invitee" ? 2 : 3,
       createdAt: new Date().toISOString()
     };
 
@@ -161,6 +211,21 @@ export class DemoStore {
     const attachmentId = `att-${Date.now()}`;
     const now = new Date().toISOString();
     const messageType = getMessageTypeForMime(mimeType);
+    const plan = createMessageDeliveryPlan(
+      demoRoom,
+      this.roomMembers,
+      id,
+      input.uploaderId,
+      input.audienceType,
+      input.targetUserIds,
+      now,
+      input.targetRole
+    );
+
+    if (plan.normalizedAudienceType !== "all" && plan.normalizedTargetUserIds.length === 0) {
+      throw new BadRequestException("At least one valid attachment target is required.");
+    }
+
     const attachment = {
       id: attachmentId,
       messageId: id,
@@ -178,11 +243,18 @@ export class DemoStore {
       roomId: demoRoom.id,
       senderId: input.uploaderId,
       messageType,
+      deliveryMode: plan.deliveryMode,
       body: input.source === "screen_capture" ? "현재 화면 캡처 공유" : `${fileName} 공유`,
-      metadata: { source: input.source },
+      metadata: { source: input.source, mediaVisibility: input.mediaVisibility ?? "shared" },
       createdAt: now,
-      audiences: createMessageAudience(id, input.audienceType, input.uploaderId, input.targetUserIds),
-      reads: [{ messageId: id, userId: input.uploaderId, readAt: now }],
+      audiences: createMessageAudience(
+        id,
+        plan.normalizedAudienceType,
+        input.uploaderId,
+        plan.normalizedTargetUserIds,
+        input.targetRole
+      ),
+      deliveries: plan.deliveries,
       attachments: [attachment]
     };
 
@@ -190,14 +262,20 @@ export class DemoStore {
     return message;
   }
 
-  readReport(messageId: string) {
+  readReport(messageId: string, viewerId = demoRoom.ownerId) {
     const message = this.messages.find((candidate) => candidate.id === messageId);
 
     if (!message) {
       return [];
     }
 
-    return buildReadReport(message, this.users);
+    const projectedMessage = projectMessageForViewer(message, demoRoom, this.roomMembers, viewerId);
+
+    if (!projectedMessage) {
+      return [];
+    }
+
+    return buildReadReport(projectedMessage, this.users);
   }
 
   confirmRead(messageId: string, input: ConfirmMessageReadInput) {
@@ -208,10 +286,25 @@ export class DemoStore {
     }
 
     const message = this.messages[messageIndex]!;
+
+    if (!message.deliveries.some((delivery) => delivery.recipientId === input.userId && !delivery.revokedAt)) {
+      throw new BadRequestException("User is not a recipient of this message.");
+    }
+
     const confirmedMessage = confirmMessageRead(message, input.userId);
     this.messages[messageIndex] = confirmedMessage;
 
     return confirmedMessage;
+  }
+
+  messageForViewer(messageId: string, viewerId: string) {
+    const message = this.messages.find((candidate) => candidate.id === messageId);
+
+    if (!message) {
+      return undefined;
+    }
+
+    return projectMessageForViewer(message, demoRoom, this.roomMembers, viewerId);
   }
 
   private getMemberRole(userId: string) {

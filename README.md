@@ -1,15 +1,17 @@
 # HahaTalk / 인비즈톡
 
-HahaTalk is a PC-first business messenger MVP for Inviz-style work communication. It starts with a running web workspace, an Electron desktop shell, a NestJS-style API skeleton, and shared TypeScript contracts for Smart Room messaging.
+HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups, an owner-centered private hub, and personal broadcasting. It currently runs as a PC web/Electron MVP with a NestJS API and shared TypeScript contracts; Android and iOS clients are staged after the persisted conversation API.
 
 ## What Runs Today
 
 - Signup/onboarding mock flow with character selection.
 - API-backed signup/login session flow for the first PC work desk entry.
-- API-backed Smart Room snapshot, `POST /messages`, and `POST /invites` flow.
+- Viewer-specific hub snapshot, `POST /messages`, and approval-aware `POST /invites` flow.
 - API-backed attachment metadata for files, photos, PDFs, videos, and screen captures.
 - API-backed confirmation action for important read-report messages.
-- Smart Room chat with `All`, `Selected`, and `Private` audience modes.
+- Hub owner chat with `All`, `Selected`, and `Private` audience modes.
+- Participant-safe projection that presents the same hub as a normal 1:1 owner conversation.
+- Per-recipient `message_deliveries` and user-specific Socket.IO channels that prevent hub roster/message leakage.
 - Internal and guest invite affordances with guest-safe permission labels.
 - File/photo/PDF/video metadata previews.
 - Screen capture share flow for PC browsers/desktops that support `getDisplayMedia`.
@@ -27,6 +29,7 @@ npm run dev:desktop
 npm run typecheck
 npm run build
 npm run smoke
+npm run schema:check
 npm run harness
 ```
 
@@ -51,3 +54,12 @@ npm run dev:loop -- -Feature "feature-name" -Mode pre-commit -Commit -Push -Comm
 ```
 
 The loop creates a timestamped Obsidian report, verifies the app with the harness, initializes Git in the code root when needed, commits, pushes, and records the branch/commit/push result.
+
+## Architecture And Roadmap
+
+- `docs/product-blueprint-v2.md`: product behavior and owner/participant experiences.
+- `docs/schema.sql`: full V2 PostgreSQL domain schema.
+- `docs/technology-decisions-2026-07-10.md`: researched model, media, mobile, and remote-support choices.
+- `docs/development-roadmap-v2.md`: staged path through production release.
+- `docs/security-threat-model.md`: privacy boundaries and mandatory leakage tests.
+- `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

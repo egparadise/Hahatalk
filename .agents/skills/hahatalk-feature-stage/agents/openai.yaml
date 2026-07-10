@@ -1,0 +1,4 @@
+interface:
+  display_name: "HahaTalk Feature Stage"
+  short_description: "Research, build, verify, document, and publish a stage"
+  default_prompt: "Use $hahatalk-feature-stage to research, implement, verify, document, and publish one HahaTalk feature stage."

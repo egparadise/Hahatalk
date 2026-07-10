@@ -49,7 +49,19 @@ function Invoke-CheckedCommand {
 
 Invoke-CheckedCommand -Command @("npm", "run", "typecheck")
 Invoke-CheckedCommand -Command @("npm", "test")
+Invoke-CheckedCommand -Command @("npm", "run", "schema:check")
 Invoke-CheckedCommand -Command @("npm", "run", "build")
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
+
+$verificationDir = Join-Path $root "node_modules\.cache"
+$verificationPath = Join-Path $verificationDir "hahatalk-last-verification.json"
+New-Item -ItemType Directory -Force -Path $verificationDir | Out-Null
+@{
+  verifiedAt = (Get-Date).ToUniversalTime().ToString("o")
+  mode = $Mode
+  feature = $Feature
+  branch = (& git branch --show-current).Trim()
+  commit = (& git rev-parse --short HEAD).Trim()
+} | ConvertTo-Json | Set-Content -LiteralPath $verificationPath -Encoding UTF8
 
 Write-Host "Harness passed."

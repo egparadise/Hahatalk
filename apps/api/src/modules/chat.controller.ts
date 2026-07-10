@@ -1,12 +1,14 @@
-import { Body, Controller, Get, Inject, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
 import {
+  type ApprovalPolicy,
   type AudienceType,
   type ConfirmMessageReadInput,
   type CreateAttachmentMessageInput,
   type CreateInviteInput,
+  type MemberRole,
   type SendMessageInput
 } from "@hahatalk/contracts";
-import { IsEmail, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from "class-validator";
+import { IsArray, IsBoolean, IsEmail, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from "class-validator";
 import { DemoStore } from "./demo-store.js";
 
 class SendMessageDto {
@@ -20,8 +22,15 @@ class SendMessageDto {
   @IsIn(["all", "selected", "private", "role"])
   audienceType: AudienceType = "all";
 
+  @IsArray()
+  @IsString({ each: true })
   targetUserIds: string[] = [];
 
+  @IsOptional()
+  @IsIn(["owner", "admin", "member", "guest", "subscriber"])
+  targetRole?: MemberRole;
+
+  @IsBoolean()
   requiresConfirmation = false;
 }
 
@@ -34,6 +43,10 @@ class CreateInviteDto {
 
   @IsString()
   invitedBy = "user-you";
+
+  @IsOptional()
+  @IsIn(["owner_and_invitee", "admins_and_invitee", "all_members_and_invitee", "quorum_and_invitee"])
+  approvalPolicy?: ApprovalPolicy;
 }
 
 class CreateAttachmentMessageDto {
@@ -54,10 +67,20 @@ class CreateAttachmentMessageDto {
   @IsIn(["all", "selected", "private", "role"])
   audienceType: AudienceType = "all";
 
+  @IsArray()
+  @IsString({ each: true })
   targetUserIds: string[] = [];
+
+  @IsOptional()
+  @IsIn(["owner", "admin", "member", "guest", "subscriber"])
+  targetRole?: MemberRole;
 
   @IsIn(["file_upload", "screen_capture"])
   source: "file_upload" | "screen_capture" = "file_upload";
+
+  @IsOptional()
+  @IsIn(["private_archive", "shared", "selected"])
+  mediaVisibility?: "private_archive" | "shared" | "selected";
 }
 
 class SignupDto {
@@ -100,8 +123,13 @@ export class ChatController {
   }
 
   @Get("mvp")
-  mvpSnapshot() {
-    return this.store.snapshot();
+  mvpSnapshot(@Query("viewerId") viewerId?: string) {
+    return this.store.snapshot(viewerId || "user-you");
+  }
+
+  @Get("spaces/:spaceId/view")
+  conversationView(@Param("spaceId") spaceId: string, @Query("viewerId") viewerId?: string) {
+    return this.store.conversationView(viewerId || "user-you", spaceId);
   }
 
   @Post("auth/signup")
@@ -120,8 +148,8 @@ export class ChatController {
   }
 
   @Get("messages/:messageId/read-report")
-  readReport(@Param("messageId") messageId: string) {
-    return this.store.readReport(messageId);
+  readReport(@Param("messageId") messageId: string, @Query("viewerId") viewerId?: string) {
+    return this.store.readReport(messageId, viewerId || "user-you");
   }
 
   @Post("messages/:messageId/confirm")

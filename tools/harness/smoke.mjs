@@ -8,15 +8,23 @@ const requiredFiles = [
   "apps/api/src/main.ts",
   "apps/api/src/modules/chat.controller.ts",
   "apps/api/src/modules/demo-store.ts",
+  "apps/api/src/modules/chat.gateway.ts",
   "apps/desktop/main.cjs",
   "packages/contracts/src/index.ts",
-  "docs/mvp-architecture.md"
+  "docs/mvp-architecture.md",
+  "docs/schema.sql",
+  "AGENTS.md",
+  ".agents/skills/hahatalk-feature-stage/SKILL.md",
+  ".codex/hooks.json"
 ];
 const requiredTerms = [
-  "Smart Room",
+  "hub",
   "audienceType",
   "message_audiences",
-  "message_reads",
+  "message_deliveries",
+  "hub_announcement",
+  "projectMessageForViewer",
+  "spaces/:spaceId/view",
   "auth/signup",
   "auth/login",
   "AuthSession",
@@ -41,9 +49,11 @@ const source = [
   readFileSync(join(root, "apps/web/components/work-desk.tsx"), "utf8"),
   readFileSync(join(root, "apps/api/src/modules/chat.controller.ts"), "utf8"),
   readFileSync(join(root, "apps/api/src/modules/demo-store.ts"), "utf8"),
+  readFileSync(join(root, "apps/api/src/modules/chat.gateway.ts"), "utf8"),
   readFileSync(join(root, "packages/contracts/src/index.ts"), "utf8"),
   readFileSync(join(root, "docs/mvp-architecture.md"), "utf8"),
-  readFileSync(join(root, "docs/schema.sql"), "utf8")
+  readFileSync(join(root, "docs/schema.sql"), "utf8"),
+  readFileSync(join(root, "AGENTS.md"), "utf8")
 ].join("\n");
 
 for (const term of requiredTerms) {
@@ -52,4 +62,4 @@ for (const term of requiredTerms) {
   }
 }
 
-console.log("Smoke check passed: HahaTalk MVP files and Smart Room terms are present.");
+console.log("Smoke check passed: HahaTalk hub privacy, API, governance, and media terms are present.");

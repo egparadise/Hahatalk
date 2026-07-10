@@ -18,6 +18,10 @@ interface SendMessageEvent {
   requiresConfirmation?: boolean;
 }
 
+interface JoinRoomEvent {
+  userId: string;
+}
+
 @WebSocketGateway({
   cors: {
     origin: process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000",
@@ -33,16 +37,33 @@ export class ChatGateway {
   constructor(@Inject(DemoStore) private readonly store: DemoStore) {}
 
   @SubscribeMessage("room:join")
-  joinRoom(@ConnectedSocket() socket: Socket) {
-    void socket.join("room-smart-sales");
-    socket.emit("room:snapshot", this.store.snapshot());
-    this.logger.log(`socket ${socket.id} joined room-smart-sales`);
+  joinRoom(@ConnectedSocket() socket: Socket, @MessageBody() body: JoinRoomEvent) {
+    const userId = body.userId;
+    const userRoom = this.userRoom(userId);
+    const snapshot = this.store.snapshot(userId);
+
+    socket.data.userId = userId;
+    void socket.join(userRoom);
+    socket.emit("room:snapshot", snapshot);
+    this.logger.log(`socket ${socket.id} joined ${userRoom}`);
   }
 
   @SubscribeMessage("message:send")
   sendMessage(@MessageBody() body: SendMessageEvent) {
     const message = this.store.sendMessage(body);
-    this.server.to("room-smart-sales").emit("message:created", message);
-    return message;
+
+    for (const delivery of message.deliveries) {
+      const projectedMessage = this.store.messageForViewer(message.id, delivery.recipientId);
+
+      if (projectedMessage) {
+        this.server.to(this.userRoom(delivery.recipientId)).emit("message:created", projectedMessage);
+      }
+    }
+
+    return this.store.messageForViewer(message.id, body.senderId);
+  }
+
+  private userRoom(userId: string) {
+    return `user:${userId}`;
   }
 }

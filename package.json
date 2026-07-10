@@ -15,6 +15,7 @@
     "typecheck": "npm run typecheck -w packages/contracts && npm run typecheck -w apps/api && npm run typecheck -w apps/web && npm run typecheck -w apps/desktop",
     "test": "npm run test -w packages/contracts",
     "smoke": "node tools/harness/smoke.mjs",
+    "schema:check": "node tools/harness/schema-check.mjs",
     "harness": "powershell -ExecutionPolicy Bypass -File tools/harness/hahatalk-harness.ps1",
     "report:new": "powershell -ExecutionPolicy Bypass -File tools/harness/new-obsidian-report.ps1",
     "dev:loop": "powershell -ExecutionPolicy Bypass -File tools/harness/development-loop.ps1",

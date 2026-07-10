@@ -32,13 +32,16 @@ import {
   buildReadReport,
   characterPresets,
   createMessageAudience,
+  createMessageDeliveryPlan,
   demoAiJobs,
   demoMessages,
   demoRoom,
   demoRoomMembers,
   demoUsers,
   getAudienceLabel,
+  getRoomPresentationForViewer,
   isMessageVisibleTo,
+  projectMessageForViewer,
   type AuthSession,
   type AiJob,
   type Attachment,
@@ -47,6 +50,7 @@ import {
   type Message,
   type MvpSnapshot,
   type RoomMember,
+  type RoomPresentation,
   type User
 } from "@hahatalk/contracts";
 
@@ -87,7 +91,7 @@ export function WorkDesk() {
     character: selectedCharacter
   };
   const currentUser = authSession?.user ?? draftUser;
-  const users = [currentUser, ...demoUsers.slice(1)];
+  const users = mergeCurrentUser(demoUsers, currentUser);
 
   async function submitAuth() {
     setAuthError("");
@@ -174,9 +178,9 @@ function SignupFlow({
     <main className="auth-shell">
       <form className="auth-panel" aria-label="가입 및 로그인" onSubmit={handleSubmit}>
         <div className="brand-mark">인</div>
-        <h1>{authMode === "signup" ? "인비즈톡 가입" : "인비즈톡 로그인"}</h1>
+        <h1>{authMode === "signup" ? "HahaTalk 가입" : "HahaTalk 로그인"}</h1>
         <p className="auth-copy">
-          {authMode === "signup" ? "업무 프로필과 캐릭터를 정하고 바로 Smart Room에 입장합니다." : "업무 이메일로 내 세션을 다시 엽니다."}
+          {authMode === "signup" ? "업무 프로필과 캐릭터를 정하고 바로 허브 대화에 입장합니다." : "업무 이메일로 내 세션을 다시 엽니다."}
         </p>
         <div className="auth-mode-tabs" aria-label="인증 모드">
           <button className="chip-button" data-active={authMode === "signup"} onClick={() => onAuthModeChange("signup")} type="button">
@@ -232,13 +236,13 @@ function SignupFlow({
       <section className="auth-preview" aria-label="업무 화면 미리보기">
         <div className="desktop-preview">
           <div className="preview-left">
-            <div className="workspace-name">INVIZ</div>
+            <div className="workspace-name">HAHATALK</div>
             <div className="preview-room" />
             <div className="preview-room" />
             <div className="preview-room" />
           </div>
           <div className="preview-center">
-            <h2 className="room-title">프로젝트 A Smart Room</h2>
+            <h2 className="room-title">프로젝트 A 허브방</h2>
             <div className="preview-message" />
             <div className="preview-message" />
             <div className="preview-message" />
@@ -268,9 +272,18 @@ function ChatDesk({
   onLogout: () => void;
   users: User[];
 }) {
-  const [roomUsers, setRoomUsers] = useState<User[]>(users);
-  const [roomMembers, setRoomMembers] = useState<RoomMember[]>(demoRoomMembers);
-  const [messages, setMessages] = useState<Message[]>(demoMessages);
+  const initialRoomPresentation = getRoomPresentationForViewer(demoRoom, demoRoomMembers, users, currentUser.id);
+  const initialVisibleMemberIds = new Set(initialRoomPresentation.visibleMemberIds);
+  const [roomPresentation, setRoomPresentation] = useState<RoomPresentation>(initialRoomPresentation);
+  const [roomUsers, setRoomUsers] = useState<User[]>(users.filter((user) => initialVisibleMemberIds.has(user.id)));
+  const [roomMembers, setRoomMembers] = useState<RoomMember[]>(
+    demoRoomMembers.filter((member) => initialVisibleMemberIds.has(member.userId))
+  );
+  const [messages, setMessages] = useState<Message[]>(
+    demoMessages
+      .map((message) => projectMessageForViewer(message, demoRoom, demoRoomMembers, currentUser.id))
+      .filter((message): message is Message => Boolean(message))
+  );
   const [aiJobs, setAiJobs] = useState<AiJob[]>(demoAiJobs);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKey>("files");
@@ -290,10 +303,6 @@ function ChatDesk({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setRoomUsers(mergeCurrentUser(users, currentUser));
-  }, [currentUser, users]);
-
-  useEffect(() => {
     void refreshSnapshot();
   }, [authSession.token]);
 
@@ -307,14 +316,31 @@ function ChatDesk({
 
   const targetUsers = roomUsers.filter((user) => user.id !== currentUser.id && !user.id.startsWith("guest"));
 
+  function getEffectiveAudience() {
+    if (roomPresentation.canSelectAudience) {
+      return {
+        audienceType,
+        targetUserIds: audienceType === "all" ? [] : targetUserIds
+      };
+    }
+
+    if (roomPresentation.mode === "group" || roomPresentation.mode === "meeting" || roomPresentation.mode === "channel") {
+      return { audienceType: "all" as const, targetUserIds: [] };
+    }
+
+    const counterpartId = roomPresentation.visibleMemberIds.find((userId) => userId !== currentUser.id);
+    return { audienceType: "private" as const, targetUserIds: counterpartId ? [counterpartId] : [] };
+  }
+
   async function refreshSnapshot() {
     setIsSyncing(true);
     setSyncError("");
 
     try {
-      const snapshot = await getJson<MvpSnapshot>("/mvp");
+      const snapshot = await getJson<MvpSnapshot>(`/mvp?viewerId=${encodeURIComponent(currentUser.id)}`);
       const nextUsers = mergeCurrentUser(snapshot.users, currentUser);
 
+      setRoomPresentation(snapshot.room);
       setRoomUsers(nextUsers);
       setRoomMembers(snapshot.roomMembers);
       setMessages(snapshot.messages);
@@ -338,11 +364,14 @@ function ChatDesk({
       return;
     }
 
+    const effectiveAudience = getEffectiveAudience();
+
     const message = createLocalMessage({
       body: trimmed,
       currentUser,
-      audienceType,
-      targetUserIds: audienceType === "all" ? [] : targetUserIds,
+      audienceType: effectiveAudience.audienceType,
+      targetUserIds: effectiveAudience.targetUserIds,
+      roomMembers,
       requiresConfirmation
     });
 
@@ -356,8 +385,8 @@ function ChatDesk({
       const savedMessage = await postJson<Message>("/messages", {
         senderId: currentUser.id,
         body: trimmed,
-        audienceType,
-        targetUserIds: audienceType === "all" ? [] : targetUserIds,
+        audienceType: effectiveAudience.audienceType,
+        targetUserIds: effectiveAudience.targetUserIds,
         requiresConfirmation
       });
 
@@ -455,6 +484,17 @@ function ChatDesk({
     }
 
     const id = `msg-file-${Date.now()}`;
+    const now = new Date().toISOString();
+    const effectiveAudience = getEffectiveAudience();
+    const deliveryPlan = createMessageDeliveryPlan(
+      demoRoom,
+      roomMembers,
+      id,
+      currentUser.id,
+      effectiveAudience.audienceType,
+      effectiveAudience.targetUserIds,
+      now
+    );
     const objectUrl = URL.createObjectURL(file);
     const attachment: Attachment = {
       id: `att-${Date.now()}`,
@@ -466,7 +506,7 @@ function ChatDesk({
       sizeBytes: file.size,
       previewStatus: "ready",
       virusScanStatus: "clean",
-      createdAt: new Date().toISOString(),
+      createdAt: now,
       objectUrl
     };
     const messageType = file.type.startsWith("image/")
@@ -479,11 +519,17 @@ function ChatDesk({
       roomId: demoRoom.id,
       senderId: currentUser.id,
       messageType,
+      deliveryMode: deliveryPlan.deliveryMode,
       body: `${file.name} 공유`,
-      metadata: { source: "file_upload" },
-      createdAt: new Date().toISOString(),
-      audiences: createMessageAudience(id, audienceType, currentUser.id, audienceType === "all" ? [] : targetUserIds),
-      reads: [{ messageId: id, userId: currentUser.id, readAt: new Date().toISOString() }],
+      metadata: { source: "file_upload", mediaVisibility: "shared" },
+      createdAt: now,
+      audiences: createMessageAudience(
+        id,
+        deliveryPlan.normalizedAudienceType,
+        currentUser.id,
+        deliveryPlan.normalizedTargetUserIds
+      ),
+      deliveries: deliveryPlan.deliveries,
       attachments: [attachment]
     };
 
@@ -499,9 +545,10 @@ function ChatDesk({
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
         sizeBytes: file.size,
-        audienceType,
-        targetUserIds: audienceType === "all" ? [] : targetUserIds,
-        source: "file_upload"
+        audienceType: effectiveAudience.audienceType,
+        targetUserIds: effectiveAudience.targetUserIds,
+        source: "file_upload",
+        mediaVisibility: "shared"
       });
       const messageWithPreview = attachPreviewUrl(savedMessage, objectUrl);
 
@@ -547,6 +594,17 @@ function ChatDesk({
       }
 
       const id = `msg-capture-${Date.now()}`;
+      const now = new Date().toISOString();
+      const effectiveAudience = getEffectiveAudience();
+      const deliveryPlan = createMessageDeliveryPlan(
+        demoRoom,
+        roomMembers,
+        id,
+        currentUser.id,
+        effectiveAudience.audienceType,
+        effectiveAudience.targetUserIds,
+        now
+      );
       const attachment: Attachment = {
         id: `att-capture-${Date.now()}`,
         messageId: id,
@@ -557,7 +615,7 @@ function ChatDesk({
         sizeBytes: blob.size,
         previewStatus: "ready",
         virusScanStatus: "clean",
-        createdAt: new Date().toISOString(),
+        createdAt: now,
         objectUrl: URL.createObjectURL(blob)
       };
       const message: Message = {
@@ -565,11 +623,17 @@ function ChatDesk({
         roomId: demoRoom.id,
         senderId: currentUser.id,
         messageType: "image",
+        deliveryMode: deliveryPlan.deliveryMode,
         body: "현재 화면 캡처 공유",
-        metadata: { source: "screen_capture" },
-        createdAt: new Date().toISOString(),
-        audiences: createMessageAudience(id, audienceType, currentUser.id, audienceType === "all" ? [] : targetUserIds),
-        reads: [{ messageId: id, userId: currentUser.id, readAt: new Date().toISOString() }],
+        metadata: { source: "screen_capture", mediaVisibility: "shared" },
+        createdAt: now,
+        audiences: createMessageAudience(
+          id,
+          deliveryPlan.normalizedAudienceType,
+          currentUser.id,
+          deliveryPlan.normalizedTargetUserIds
+        ),
+        deliveries: deliveryPlan.deliveries,
         attachments: [attachment]
       };
 
@@ -583,9 +647,10 @@ function ChatDesk({
           fileName: "화면캡처.png",
           mimeType: "image/png",
           sizeBytes: blob.size,
-          audienceType,
-          targetUserIds: audienceType === "all" ? [] : targetUserIds,
-          source: "screen_capture"
+          audienceType: effectiveAudience.audienceType,
+          targetUserIds: effectiveAudience.targetUserIds,
+          source: "screen_capture",
+          mediaVisibility: "shared"
         });
         const messageWithPreview = attachPreviewUrl(savedMessage, attachment.objectUrl!);
 
@@ -633,7 +698,7 @@ function ChatDesk({
         <div className="sidebar-header">
           <div className="workspace-name">INVIZ WORKSPACE</div>
           <h2 className="section-title" style={{ marginTop: 4, fontSize: 22 }}>
-            인비즈톡
+            HahaTalk
           </h2>
         </div>
         <div className="sidebar-header">
@@ -644,8 +709,10 @@ function ChatDesk({
         </div>
         <div className="room-list">
           <button className="room-item" data-active="true" type="button">
-            <strong>프로젝트 A Smart Room</strong>
-            <span className="room-meta">전체/선택/비공개 대화</span>
+            <strong>{roomPresentation.title}</strong>
+            <span className="room-meta">
+              {roomPresentation.mode === "hub_owner" ? "전체 공지/선택 발송/개별 대화" : "개인 대화"}
+            </span>
           </button>
           <button className="room-item" type="button">
             <strong>고객지원 대기실</strong>
@@ -661,8 +728,12 @@ function ChatDesk({
       <section className="workspace" aria-label="채팅 업무 공간">
         <header className="workspace-header">
           <div>
-            <h1 className="room-title">{demoRoom.name}</h1>
-            <div className="tiny">멤버 {roomUsers.length}명 · {authSession.role === "guest" ? "게스트 세션" : "내부 세션"} · 읽음 리포트 켜짐</div>
+            <h1 className="room-title">{roomPresentation.title}</h1>
+            <div className="tiny">
+              {roomPresentation.rosterVisible ? `허브 ${roomPresentation.memberCount ?? roomUsers.length}명` : "1:1 대화"}
+              {` · ${authSession.role === "guest" ? "게스트 세션" : "내부 세션"}`}
+              {authSession.permissions.canOpenReadReport ? " · 읽음 리포트 켜짐" : ""}
+            </div>
           </div>
           <div className="header-actions">
             <span className="sync-chip" data-state={syncError ? "error" : isSyncing ? "loading" : "ready"}>
@@ -692,8 +763,8 @@ function ChatDesk({
 
         <div className="message-list" role="log">
           {visibleMessages.map((message) => {
-            const sender = users.find((user) => user.id === message.senderId) ?? currentUser;
-            const readCount = message.reads.length;
+            const sender = roomUsers.find((user) => user.id === message.senderId) ?? currentUser;
+            const readCount = message.deliveries.filter((delivery) => delivery.readAt).length;
 
             return (
               <article
@@ -705,9 +776,9 @@ function ChatDesk({
                 <img className="avatar" alt="" src={sender.character.thumbnailUrl} />
                 <div className="message-bubble">
                   <div className="message-meta">
-                    <strong>{sender.displayName}</strong>
+                    <strong>{message.senderId === currentUser.id ? "나" : sender.displayName}</strong>
                     <span>{formatTime(message.createdAt)}</span>
-                    <span className="audience-chip">{getAudienceLabel(message, users)}</span>
+                    <span className="audience-chip">{getAudienceLabel(message, roomUsers)}</span>
                     {message.metadata.requiresConfirmation ? <span className="status-chip">확인 요청</span> : null}
                   </div>
                   <p className="message-body">{message.body}</p>
@@ -730,10 +801,12 @@ function ChatDesk({
                     </div>
                   ) : null}
                   <div className="message-actions" style={{ marginTop: 10 }}>
-                    <span className="tiny">읽음 {readCount}</span>
-                    <button className="secondary-button" onClick={() => setActivePanel("reads")} type="button">
-                      <CheckCircle2 size={16} /> 리포트
-                    </button>
+                    {authSession.permissions.canOpenReadReport ? <span className="tiny">읽음 {readCount}</span> : null}
+                    {authSession.permissions.canOpenReadReport ? (
+                      <button className="secondary-button" onClick={() => setActivePanel("reads")} type="button">
+                        <CheckCircle2 size={16} /> 리포트
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </article>
@@ -743,18 +816,24 @@ function ChatDesk({
 
         <footer className="composer">
           <div className="audience-tabs" aria-label="메시지 대상">
-            <button className="chip-button" data-active={audienceType === "all"} onClick={() => changeAudience("all")} type="button">
-              전체
-            </button>
-            <button className="chip-button" data-active={audienceType === "selected"} onClick={() => changeAudience("selected")} type="button">
-              선택
-            </button>
-            <button className="chip-button" data-active={audienceType === "private"} onClick={() => changeAudience("private")} type="button">
-              1:1
-            </button>
-            <span className="audience-chip">{audienceLabel(audienceType, targetUserIds, users)}</span>
+            {roomPresentation.canSelectAudience ? (
+              <>
+                <button className="chip-button" data-active={audienceType === "all"} onClick={() => changeAudience("all")} type="button">
+                  전체
+                </button>
+                <button className="chip-button" data-active={audienceType === "selected"} onClick={() => changeAudience("selected")} type="button">
+                  선택
+                </button>
+                <button className="chip-button" data-active={audienceType === "private"} onClick={() => changeAudience("private")} type="button">
+                  1:1
+                </button>
+                <span className="audience-chip">{audienceLabel(audienceType, targetUserIds, roomUsers)}</span>
+              </>
+            ) : (
+              <span className="audience-chip">{roomPresentation.mode === "direct" ? "1:1" : "전체"}</span>
+            )}
           </div>
-          {audienceType !== "all" ? (
+          {roomPresentation.canSelectAudience && audienceType !== "all" ? (
             <div className="target-list">
               {targetUsers.map((user) => (
                 <button className="target-toggle" data-active={targetUserIds.includes(user.id)} key={user.id} onClick={() => toggleTarget(user.id)} type="button">
@@ -821,9 +900,11 @@ function ChatDesk({
           <button className="panel-tab" data-active={activePanel === "pdf"} onClick={() => setActivePanel("pdf")} title="PDF" type="button">
             <FileText size={18} />
           </button>
-          <button className="panel-tab" data-active={activePanel === "reads"} onClick={() => setActivePanel("reads")} title="읽음" type="button">
-            <CheckCircle2 size={18} />
-          </button>
+          {authSession.permissions.canOpenReadReport ? (
+            <button className="panel-tab" data-active={activePanel === "reads"} onClick={() => setActivePanel("reads")} title="읽음" type="button">
+              <CheckCircle2 size={18} />
+            </button>
+          ) : null}
           <button className="panel-tab" data-active={activePanel === "members"} onClick={() => setActivePanel("members")} title="참여자" type="button">
             <Users size={18} />
           </button>
@@ -1137,27 +1218,44 @@ function createLocalMessage({
   currentUser,
   audienceType,
   targetUserIds,
+  roomMembers,
   requiresConfirmation
 }: {
   body: string;
   currentUser: User;
   audienceType: AudienceType;
   targetUserIds: string[];
+  roomMembers: RoomMember[];
   requiresConfirmation: boolean;
 }): Message {
   const id = `msg-local-${Date.now()}`;
   const now = new Date().toISOString();
+  const deliveryPlan = createMessageDeliveryPlan(
+    demoRoom,
+    roomMembers,
+    id,
+    currentUser.id,
+    audienceType,
+    targetUserIds,
+    now
+  );
 
   return {
     id,
     roomId: demoRoom.id,
     senderId: currentUser.id,
     messageType: "text",
+    deliveryMode: deliveryPlan.deliveryMode,
     body,
     metadata: requiresConfirmation ? { requiresConfirmation: true } : {},
     createdAt: now,
-    audiences: createMessageAudience(id, audienceType, currentUser.id, targetUserIds),
-    reads: [{ messageId: id, userId: currentUser.id, readAt: now }],
+    audiences: createMessageAudience(
+      id,
+      deliveryPlan.normalizedAudienceType,
+      currentUser.id,
+      deliveryPlan.normalizedTargetUserIds
+    ),
+    deliveries: deliveryPlan.deliveries,
     attachments: []
   };
 }
