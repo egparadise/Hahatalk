@@ -24,6 +24,7 @@ create table users (
   locale text not null default 'ko-KR',
   timezone text not null default 'Asia/Seoul',
   auth_version integer not null default 1 check (auth_version > 0),
+  bootstrap_claim_allowed boolean not null default false,
   account_claimed_at timestamptz,
   password_changed_at timestamptz,
   last_seen_at timestamptz,
@@ -78,23 +79,28 @@ create index web_sessions_expiry_idx
 
 create table consent_records (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id),
+  organization_id uuid references organizations(id) on delete cascade,
+  subject_user_id uuid references users(id),
+  subject_email citext,
+  invitation_id uuid,
   consent_type text not null check (consent_type in (
     'terms', 'privacy', 'group_join', 'screen_share', 'remote_view', 'remote_control',
     'recording', 'ai_transcript', 'voice_profile', 'avatar_source_retention', 'external_share'
   )),
-  scope_type text not null,
+  scope_type text,
   scope_id uuid,
   decision text not null check (decision in ('granted', 'denied', 'revoked', 'expired')),
-  policy_version text,
+  policy_version text not null,
   evidence_json jsonb not null default '{}',
   expires_at timestamptz,
   created_at timestamptz not null default now(),
-  revoked_at timestamptz
+  revoked_at timestamptz,
+  check (subject_user_id is not null or subject_email is not null)
 );
 
 create index consent_records_scope_idx on consent_records(scope_type, scope_id, consent_type);
-create index consent_records_user_idx on consent_records(user_id, created_at desc);
+create index consent_records_user_idx on consent_records(subject_user_id, created_at desc);
+create index consent_records_invitation_idx on consent_records(invitation_id, created_at asc);
 
 -- Owner-managed address book collections. A private collection does not tell
 -- its members that they have been grouped as family, customers, or another cohort.
@@ -164,31 +170,58 @@ create table hub_spokes (
 
 create table invitations (
   id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
   invited_by uuid not null references users(id),
   invitee_user_id uuid references users(id),
   invitee_email citext,
-  target_type text not null check (target_type in ('connection', 'space', 'collection', 'event', 'channel')),
-  target_id uuid not null,
-  requested_role text,
+  target_type text not null default 'organization' check (target_type in ('organization', 'connection', 'space', 'collection', 'event', 'channel')),
+  target_id uuid,
+  requested_role text not null check (requested_role in ('member', 'guest')),
   approval_policy text not null check (approval_policy in (
     'owner_and_invitee', 'admins_and_invitee', 'all_members_and_invitee', 'quorum_and_invitee'
   )),
   required_approval_count integer not null check (required_approval_count >= 1),
-  status text not null check (status in ('draft', 'pending_approval', 'sent', 'accepted', 'declined', 'expired', 'revoked')),
-  token_hash text unique,
-  expires_at timestamptz,
+  status text not null check (status in ('pending_approval', 'sent', 'accepted', 'declined', 'expired', 'revoked')),
+  token_digest bytea unique,
+  token_issued_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  max_uses integer not null default 1 check (max_uses = 1),
+  use_count integer not null default 0 check (use_count between 0 and max_uses),
+  invitee_decision text check (invitee_decision in ('accepted', 'declined')),
+  invitee_decided_at timestamptz,
+  accepted_by uuid references users(id),
+  activated_at timestamptz,
+  revoked_at timestamptz,
+  revoked_by uuid references users(id),
+  revoke_reason text,
   created_at timestamptz not null default now(),
-  check (invitee_user_id is not null or invitee_email is not null)
+  updated_at timestamptz not null default now(),
+  check (invitee_user_id is not null or invitee_email is not null),
+  check (expires_at > token_issued_at),
+  check ((invitee_decision is null) = (invitee_decided_at is null))
+);
+
+create table invitation_approval_requirements (
+  invitation_id uuid not null references invitations(id) on delete cascade,
+  approver_id uuid not null references users(id),
+  role_snapshot text not null check (role_snapshot in ('owner', 'admin', 'member')),
+  created_at timestamptz not null default now(),
+  primary key (invitation_id, approver_id)
 );
 
 create table invitation_approvals (
+  id uuid primary key default gen_random_uuid(),
   invitation_id uuid not null references invitations(id) on delete cascade,
   approver_id uuid not null references users(id),
-  decision text not null check (decision in ('approved', 'rejected', 'revoked')),
+  decision text not null check (decision in ('approved', 'rejected')),
   decided_at timestamptz not null default now(),
   note text,
-  primary key (invitation_id, approver_id)
+  unique (invitation_id, approver_id)
 );
+
+alter table consent_records
+  add constraint consent_records_invitation_fk
+  foreign key (invitation_id) references invitations(id) on delete set null;
 
 create table messages (
   id uuid primary key default gen_random_uuid(),

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -68,12 +68,19 @@ await cp(
 );
 
 const indexPath = path.join(webRuntimeRoot, "index.html");
+const migrationRoot = path.join(runtimeRoot, "migrations");
+const migrationNames = (await readdir(migrationRoot))
+  .filter((fileName) => /^\d+_[a-z0-9_-]+\.sql$/i.test(fileName))
+  .sort((left, right) => left.localeCompare(right));
+const migrationSha256 = Object.fromEntries(await Promise.all(
+  migrationNames.map(async (fileName) => [fileName, await sha256(path.join(migrationRoot, fileName))])
+));
 const manifest = {
   apiSha256: await sha256(bundledApi),
   generatedAt: new Date().toISOString(),
   indexSha256: await sha256(indexPath),
-  migrationSha256: await sha256(path.join(runtimeRoot, "migrations", "001_auth_foundation.sql")),
-  runtimeVersion: 2
+  migrationSha256,
+  runtimeVersion: 3
 };
 await writeFile(path.join(runtimeRoot, "runtime-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 

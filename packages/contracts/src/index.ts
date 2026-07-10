@@ -30,6 +30,8 @@ export type AiJobStatus = "queued" | "running" | "succeeded" | "failed" | "cance
 export type AttachmentPreviewStatus = "queued" | "ready" | "failed";
 export type VirusScanStatus = "pending" | "clean" | "blocked";
 export type ApprovalPolicy = "owner_and_invitee" | "admins_and_invitee" | "all_members_and_invitee" | "quorum_and_invitee";
+export type InvitationStatus = "pending_approval" | "sent" | "accepted" | "declined" | "expired" | "revoked";
+export type InvitationDecision = "approved" | "rejected";
 
 export interface Organization {
   id: string;
@@ -171,6 +173,52 @@ export interface Invite {
   approvalPolicy: ApprovalPolicy;
   requiredApprovalCount: number;
   createdAt: string;
+}
+
+export interface MembershipInvitationView {
+  id: string;
+  email: string;
+  role: "member" | "guest";
+  status: InvitationStatus;
+  inviterDisplayName: string;
+  createdAt: string;
+  expiresAt: string;
+  inviteeAcceptedAt?: string;
+  canDecide: boolean;
+  canManage: boolean;
+  myDecision?: InvitationDecision;
+  approvalPolicy?: ApprovalPolicy;
+  requiredApprovalCount?: number;
+  approvedCount?: number;
+}
+
+export interface CreatedMembershipInvitation extends MembershipInvitationView {
+  inviteCode: string;
+}
+
+export interface InvitationPreview {
+  organizationName: string;
+  inviterDisplayName: string;
+  emailMasked: string;
+  role: "member" | "guest";
+  expiresAt: string;
+  accountClaimed: boolean;
+}
+
+export interface InvitationAcceptanceResult {
+  email: string;
+  role: "member" | "guest";
+  status: "accepted" | "pending_approval";
+  loginAllowed: boolean;
+}
+
+export interface DeviceSessionView {
+  id: string;
+  current: boolean;
+  userAgent: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
 }
 
 export interface AiJob {

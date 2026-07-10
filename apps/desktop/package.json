@@ -1,7 +1,7 @@
 {
   "name": "@hahatalk/desktop",
   "productName": "HahaTalk",
-  "version": "0.3.1",
+  "version": "0.4.3",
   "private": true,
   "description": "HahaTalk Windows desktop messenger",
   "author": "Inviz",

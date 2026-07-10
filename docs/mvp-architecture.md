@@ -45,7 +45,9 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Opaque HttpOnly/SameSite cookie sessions; only SHA-256 token digests are stored in `web_sessions`.
 - Authenticated `GET /auth/me`, `POST /auth/logout`, `GET /mvp`, and `GET /spaces/:spaceId/view` projection.
 - Exact-Origin and custom-header checks on state-changing browser requests.
-- API-backed `POST /messages`, `POST /invites`, and `POST /attachments`.
+- API-backed `POST /messages` and `POST /attachments`.
+- PostgreSQL-backed `/invitations` create/list/preview/accept/decline/decision/revoke state machine.
+- PostgreSQL-backed `/auth/sessions` list and session-revoke controls.
 - Delivery-based visibility and read confirmation through `POST /messages/:messageId/confirm`.
 - Authenticated user-specific Socket.IO rooms instead of hub-wide message broadcast.
 - File/photo/PDF/video metadata previews and PC capture path.

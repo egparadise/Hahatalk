@@ -13,8 +13,6 @@ import {
   confirmMessageRead,
   getMessageTypeForMime,
   getRoomPresentationForViewer,
-  isValidEmail,
-  normalizeEmail,
   projectMessageForViewer,
   type ConfirmMessageReadInput,
   type ConversationView,
@@ -22,9 +20,7 @@ import {
   type Message,
   type MvpSnapshot,
   type RoomMember,
-  type CreateInviteInput,
   type CreateAttachmentMessageInput,
-  type Invite,
   type SendMessageInput,
   type User
 } from "@hahatalk/contracts";
@@ -34,7 +30,6 @@ export class DemoStore {
   private readonly users: User[] = [...demoUsers];
   private readonly roomMembers: RoomMember[] = [...demoRoomMembers];
   private readonly messages: Message[] = [...demoMessages];
-  private readonly invites: Invite[] = [];
 
   ensureUser(user: User, role: MemberRole) {
     const userIndex = this.users.findIndex((candidate) => candidate.id === user.id);
@@ -70,7 +65,7 @@ export class DemoStore {
       organization: demoOrganization,
       ...view,
       aiJobs: isOwner ? demoAiJobs : demoAiJobs.filter((job) => job.requestedBy === viewerId),
-      invites: isOwner ? this.invites : []
+      invites: []
     };
   }
 
@@ -143,29 +138,6 @@ export class DemoStore {
 
     this.messages.push(message);
     return message;
-  }
-
-  createInvite(input: CreateInviteInput) {
-    const email = normalizeEmail(input.email);
-
-    if (!isValidEmail(email)) {
-      throw new BadRequestException("invite email must be valid.");
-    }
-
-    const invite: Invite = {
-      id: `invite-${Date.now()}`,
-      roomId: demoRoom.id,
-      invitedBy: input.invitedBy,
-      email,
-      role: input.role,
-      status: "pending_approval",
-      approvalPolicy: input.approvalPolicy ?? "admins_and_invitee",
-      requiredApprovalCount: input.approvalPolicy === "owner_and_invitee" ? 2 : 3,
-      createdAt: new Date().toISOString()
-    };
-
-    this.invites.push(invite);
-    return invite;
   }
 
   createAttachmentMessage(input: CreateAttachmentMessageInput) {

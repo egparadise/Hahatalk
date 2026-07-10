@@ -58,6 +58,16 @@ button:disabled {
   background: var(--bg);
 }
 
+.auth-shell-single {
+  grid-template-columns: minmax(320px, 480px);
+  justify-content: center;
+}
+
+.auth-shell-single .auth-panel {
+  min-height: 100vh;
+  border-left: 1px solid var(--line);
+}
+
 .auth-panel {
   padding: 32px;
   border-right: 1px solid var(--line);
@@ -104,8 +114,15 @@ button:disabled {
 
 .auth-mode-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 18px;
+}
+
+.auth-panel > .secondary-button {
+  justify-content: center;
+  width: 100%;
+  margin-top: 10px;
 }
 
 .auth-error {
@@ -171,6 +188,40 @@ button:disabled {
 .character-card[data-selected="true"] {
   border-color: var(--teal);
   box-shadow: 0 0 0 3px rgba(15, 159, 143, 0.14);
+}
+
+.compact-character-grid .character-card {
+  min-height: 96px;
+}
+
+.invite-summary {
+  display: grid;
+  gap: 6px;
+  margin: 18px 0;
+  border-left: 3px solid var(--teal);
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.consent-list {
+  display: grid;
+  gap: 9px;
+  margin: 16px 0;
+}
+
+.consent-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.consent-list input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--teal);
 }
 
 .character-card img,
@@ -690,6 +741,124 @@ button:disabled {
   gap: 8px;
   font-size: 15px;
   margin-bottom: 10px;
+}
+
+.panel-title-row,
+.invitation-heading,
+.invitation-actions,
+.invite-code-box {
+  display: flex;
+  align-items: center;
+}
+
+.panel-title-row,
+.invitation-heading {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panel-title-row .panel-title {
+  margin-bottom: 0;
+}
+
+.compact-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.invite-code-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.invite-code-box code {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  padding: 8px;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.compact-consent-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 10px 0;
+}
+
+.compact-consent-list label {
+  align-items: start;
+}
+
+.invitation-list {
+  display: grid;
+}
+
+.invitation-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.invitation-item:last-child {
+  border-bottom: 0;
+}
+
+.invitation-heading > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.invitation-actions {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.invitation-actions .secondary-button {
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.approval-meter {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--surface-strong);
+  overflow: hidden;
+}
+
+.approval-meter span {
+  display: block;
+  height: 100%;
+  background: var(--teal);
+}
+
+.session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.session-row:last-child {
+  border-bottom: 0;
+}
+
+.session-row > span:first-child {
+  min-width: 0;
+}
+
+.session-agent {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-preview {

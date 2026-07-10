@@ -5,10 +5,12 @@ import {
   CalendarDays,
   Camera,
   CheckCircle2,
+  Copy,
   FileText,
   FolderOpen,
   Image as ImageIcon,
   Inbox,
+  KeyRound,
   LockKeyhole,
   LogOut,
   MessageCircle,
@@ -22,10 +24,13 @@ import {
   RefreshCw,
   Search,
   Send,
+  ShieldCheck,
   Sparkles,
+  UserCheck,
   Users,
   Video,
-  Volume2
+  Volume2,
+  XCircle
 } from "lucide-react";
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -42,12 +47,17 @@ import {
   getRoomPresentationForViewer,
   isMessageVisibleTo,
   projectMessageForViewer,
+  type ApprovalPolicy,
   type AuthSession,
   type AiJob,
   type Attachment,
   type AudienceType,
-  type Invite,
+  type CreatedMembershipInvitation,
+  type DeviceSessionView,
+  type InvitationAcceptanceResult,
+  type InvitationPreview,
   type Message,
+  type MembershipInvitationView,
   type MvpSnapshot,
   type RoomMember,
   type RoomPresentation,
@@ -55,7 +65,8 @@ import {
 } from "@hahatalk/contracts";
 
 type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
-type AuthMode = "signup" | "login";
+type AuthMode = "activate" | "login" | "invitation";
+type CredentialAuthMode = Exclude<AuthMode, "invitation">;
 
 const reactions = ["확인", "완료", "질문", "긴급", "감사"];
 type HahaTalkDesktopBridge = {
@@ -71,7 +82,7 @@ const desktopBridge = typeof window === "undefined"
 const apiBaseUrl = desktopBridge?.apiBaseUrl ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:4000";
 
 export function WorkDesk() {
-  const [authMode, setAuthMode] = useState<AuthMode>("signup");
+  const [authMode, setAuthMode] = useState<AuthMode>("activate");
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [isRestoringAuth, setIsRestoringAuth] = useState(true);
   const [authError, setAuthError] = useState("");
@@ -80,10 +91,20 @@ export function WorkDesk() {
   const [email, setEmail] = useState("you@inviz.co.kr");
   const [password, setPassword] = useState("");
   const [selectedCharacterId, setSelectedCharacterId] = useState(characterPresets[0]?.id ?? "");
+  const [initialInviteCode, setInitialInviteCode] = useState("");
   const selectedCharacter = characterPresets.find((character) => character.id === selectedCharacterId) ?? characterPresets[0]!;
 
   useEffect(() => {
     let active = true;
+    const invitationHash = window.location.hash.match(/^#invite=(.+)$/);
+    if (invitationHash?.[1]) {
+      try {
+        setInitialInviteCode(decodeURIComponent(invitationHash[1]));
+        setAuthMode("invitation");
+      } catch {
+        setInitialInviteCode("");
+      }
+    }
     void getJson<AuthSession>("/auth/me")
       .then((session) => {
         if (!active) {
@@ -120,8 +141,8 @@ export function WorkDesk() {
 
     try {
       const session = await postJson<AuthSession>(
-        authMode === "signup" ? "/auth/signup" : "/auth/login",
-        authMode === "signup"
+        authMode === "activate" ? "/auth/signup" : "/auth/login",
+        authMode === "activate"
           ? { displayName, email, password, characterId: selectedCharacterId }
           : { email, password }
       );
@@ -153,6 +174,19 @@ export function WorkDesk() {
   }
 
   if (!authSession) {
+    if (authMode === "invitation") {
+      return (
+        <InvitationAcceptanceFlow
+          initialInviteCode={initialInviteCode}
+          onBack={() => setAuthMode("login")}
+          onComplete={(acceptedEmail) => {
+            setEmail(acceptedEmail);
+            setPassword("");
+            setAuthMode("login");
+          }}
+        />
+      );
+    }
     return (
       <SignupFlow
         authMode={authMode}
@@ -162,7 +196,8 @@ export function WorkDesk() {
         error={authError}
         isSubmitting={isSubmittingAuth}
         selectedCharacterId={selectedCharacterId}
-        onAuthModeChange={setAuthMode}
+        onAuthModeChange={(value) => setAuthMode(value)}
+        onInvitationMode={() => setAuthMode("invitation")}
         onDisplayNameChange={setDisplayName}
         onEmailChange={setEmail}
         onPasswordChange={setPassword}
@@ -172,7 +207,15 @@ export function WorkDesk() {
     );
   }
 
-  return <ChatDesk authSession={authSession} currentUser={currentUser} onLogout={logout} users={users} />;
+  return (
+    <ChatDesk
+      authSession={authSession}
+      currentUser={currentUser}
+      initialInviteCode={initialInviteCode}
+      onLogout={logout}
+      users={users}
+    />
+  );
 }
 
 function SignupFlow({
@@ -184,20 +227,22 @@ function SignupFlow({
   isSubmitting,
   selectedCharacterId,
   onAuthModeChange,
+  onInvitationMode,
   onDisplayNameChange,
   onEmailChange,
   onPasswordChange,
   onCharacterChange,
   onSubmit
 }: {
-  authMode: AuthMode;
+  authMode: CredentialAuthMode;
   displayName: string;
   email: string;
   password: string;
   error: string;
   isSubmitting: boolean;
   selectedCharacterId: string;
-  onAuthModeChange: (value: AuthMode) => void;
+  onAuthModeChange: (value: CredentialAuthMode) => void;
+  onInvitationMode: () => void;
   onDisplayNameChange: (value: string) => void;
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
@@ -213,20 +258,23 @@ function SignupFlow({
     <main className="auth-shell">
       <form className="auth-panel" aria-label="가입 및 로그인" onSubmit={handleSubmit}>
         <div className="brand-mark">인</div>
-        <h1>{authMode === "signup" ? "HahaTalk 가입" : "HahaTalk 로그인"}</h1>
+        <h1>{authMode === "activate" ? "HahaTalk 계정 활성화" : "HahaTalk 로그인"}</h1>
         <p className="auth-copy">
-          {authMode === "signup" ? "업무 프로필과 캐릭터를 정하고 바로 허브 대화에 입장합니다." : "업무 이메일과 비밀번호로 내 세션을 다시 엽니다."}
+          {authMode === "activate" ? "등록된 초기 계정의 업무 프로필과 캐릭터를 설정합니다." : "업무 이메일과 비밀번호로 내 세션을 다시 엽니다."}
         </p>
         <div className="auth-mode-tabs" aria-label="인증 모드">
-          <button className="chip-button" data-active={authMode === "signup"} onClick={() => onAuthModeChange("signup")} type="button">
-            가입하기
+          <button className="chip-button" data-active={authMode === "activate"} onClick={() => onAuthModeChange("activate")} type="button">
+            계정 활성화
           </button>
           <button className="chip-button" data-active={authMode === "login"} onClick={() => onAuthModeChange("login")} type="button">
             로그인
           </button>
+          <button className="chip-button" onClick={onInvitationMode} type="button">
+            초대 수락
+          </button>
         </div>
         <div className="field-stack">
-          {authMode === "signup" ? (
+          {authMode === "activate" ? (
             <label className="field">
               이름
               <input className="text-input" minLength={2} required value={displayName} onChange={(event) => onDisplayNameChange(event.target.value)} />
@@ -239,10 +287,10 @@ function SignupFlow({
           <label className="field">
             비밀번호
             <input
-              autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+              autoComplete={authMode === "activate" ? "new-password" : "current-password"}
               className="text-input"
               maxLength={128}
-              minLength={authMode === "signup" ? 12 : 1}
+              minLength={authMode === "activate" ? 12 : 1}
               required
               type="password"
               value={password}
@@ -251,7 +299,7 @@ function SignupFlow({
           </label>
         </div>
 
-        {authMode === "signup" ? (
+        {authMode === "activate" ? (
           <>
             <h2 className="section-title" style={{ marginTop: 24, fontSize: 16 }}>
               캐릭터 선택
@@ -278,7 +326,7 @@ function SignupFlow({
           </div>
         ) : null}
         <button className="primary-button" disabled={isSubmitting} type="submit">
-          {isSubmitting ? "처리 중" : authMode === "signup" ? "가입하고 업무방 입장" : "로그인하고 입장"}
+          {isSubmitting ? "처리 중" : authMode === "activate" ? "계정 활성화" : "로그인하고 입장"}
         </button>
       </form>
       <section className="auth-preview" aria-label="업무 화면 미리보기">
@@ -309,31 +357,243 @@ function SignupFlow({
   );
 }
 
+function InvitationAcceptanceFlow({
+  initialInviteCode,
+  onBack,
+  onComplete
+}: {
+  initialInviteCode: string;
+  onBack: () => void;
+  onComplete: (email: string) => void;
+}) {
+  const [inviteCode, setInviteCode] = useState(initialInviteCode);
+  const [preview, setPreview] = useState<InvitationPreview | null>(null);
+  const [result, setResult] = useState<InvitationAcceptanceResult | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [characterId, setCharacterId] = useState(characterPresets[2]?.id ?? characterPresets[0]!.id);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
+  const [acceptGroupJoin, setAcceptGroupJoin] = useState(false);
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function inspectInvitation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setIsSubmitting(true);
+    try {
+      const nextPreview = await postJson<InvitationPreview>("/invitations/preview", { inviteCode: inviteCode.trim() });
+      setPreview(nextPreview);
+      window.history.replaceState(null, "", window.location.pathname);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "초대 코드를 확인하지 못했습니다.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function acceptInvitation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setIsSubmitting(true);
+    try {
+      const accepted = await postJson<InvitationAcceptanceResult>("/invitations/accept", {
+        acceptGroupJoin,
+        acceptPrivacy,
+        acceptTerms,
+        characterId,
+        displayName,
+        inviteCode,
+        password
+      });
+      setResult(accepted);
+      setInviteCode("");
+      setPassword("");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "초대 수락을 완료하지 못했습니다.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function declineInvitation() {
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await postJson<{ ok: boolean }>("/invitations/decline", { inviteCode });
+      setResult({ email: "", loginAllowed: false, role: preview?.role ?? "guest", status: "pending_approval" });
+      setInviteCode("");
+      setPreview(null);
+      onBack();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "초대 거절을 저장하지 못했습니다.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (result) {
+    return (
+      <main className="auth-shell auth-shell-single">
+        <section className="auth-panel" aria-live="polite">
+          <div className="brand-mark">인</div>
+          <ShieldCheck size={34} />
+          <h1>{result.loginAllowed ? "가입 승인 완료" : "가입 승인 대기"}</h1>
+          <div className="invite-summary">
+            <strong>{result.role === "guest" ? "외부 게스트" : "내부 구성원"}</strong>
+            <span className="tiny">{result.loginAllowed ? "로그인 가능" : "필요한 구성원 승인을 기다리는 중"}</span>
+          </div>
+          {result.loginAllowed ? (
+            <button className="primary-button" onClick={() => onComplete(result.email)} type="button">
+              로그인으로 이동
+            </button>
+          ) : (
+            <button className="secondary-button" onClick={onBack} type="button">
+              로그인 화면
+            </button>
+          )}
+        </section>
+      </main>
+    );
+  }
+
+  if (!preview) {
+    return (
+      <main className="auth-shell auth-shell-single">
+        <form className="auth-panel" onSubmit={inspectInvitation}>
+          <div className="brand-mark">인</div>
+          <h1>HahaTalk 초대 수락</h1>
+          <label className="field">
+            초대 코드
+            <input
+              autoComplete="off"
+              className="text-input"
+              minLength={40}
+              required
+              value={inviteCode}
+              onChange={(event) => setInviteCode(event.target.value)}
+            />
+          </label>
+          {error ? <div className="auth-error" role="alert">{error}</div> : null}
+          <button className="primary-button" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "확인 중" : "초대 확인"}
+          </button>
+          <button className="secondary-button" onClick={onBack} type="button">
+            로그인으로 돌아가기
+          </button>
+        </form>
+      </main>
+    );
+  }
+
+  if (preview.accountClaimed) {
+    return (
+      <main className="auth-shell auth-shell-single">
+        <section className="auth-panel">
+          <div className="brand-mark">인</div>
+          <KeyRound size={34} />
+          <h1>기존 계정 초대</h1>
+          <div className="invite-summary">
+            <strong>{preview.organizationName}</strong>
+            <span>{preview.inviterDisplayName} · {preview.emailMasked}</span>
+            <span className="tiny">{preview.role === "guest" ? "외부 게스트" : "내부 구성원"}</span>
+          </div>
+          <div className="notice">기존 계정으로 로그인한 뒤 참여자 패널에서 초대 코드를 수락합니다.</div>
+          <button className="primary-button" onClick={onBack} type="button">로그인</button>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="auth-shell auth-shell-single">
+      <form className="auth-panel" onSubmit={acceptInvitation}>
+        <div className="brand-mark">인</div>
+        <h1>{preview.organizationName} 가입</h1>
+        <div className="invite-summary">
+          <strong>{preview.inviterDisplayName}</strong>
+          <span>{preview.emailMasked} · {preview.role === "guest" ? "외부 게스트" : "내부 구성원"}</span>
+          <span className="tiny">만료 {formatDateTime(preview.expiresAt)}</span>
+        </div>
+        <div className="field-stack">
+          <label className="field">
+            이름
+            <input className="text-input" minLength={2} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+          </label>
+          <label className="field">
+            새 비밀번호
+            <input
+              autoComplete="new-password"
+              className="text-input"
+              minLength={12}
+              required
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="character-grid compact-character-grid">
+          {characterPresets.map((character) => (
+            <button
+              className="character-card"
+              data-selected={character.id === characterId}
+              key={character.id}
+              onClick={() => setCharacterId(character.id)}
+              type="button"
+            >
+              <img alt="" src={character.thumbnailUrl} />
+              <strong>{character.name}</strong>
+            </button>
+          ))}
+        </div>
+        <div className="consent-list">
+          <label><input checked={acceptTerms} onChange={(event) => setAcceptTerms(event.target.checked)} type="checkbox" /> 이용약관 동의</label>
+          <label><input checked={acceptPrivacy} onChange={(event) => setAcceptPrivacy(event.target.checked)} type="checkbox" /> 개인정보 처리 동의</label>
+          <label><input checked={acceptGroupJoin} onChange={(event) => setAcceptGroupJoin(event.target.checked)} type="checkbox" /> 그룹 가입 동의</label>
+        </div>
+        {error ? <div className="auth-error" role="alert">{error}</div> : null}
+        <button className="primary-button" disabled={isSubmitting} type="submit">
+          {isSubmitting ? "가입 처리 중" : "동의하고 가입"}
+        </button>
+        <button className="secondary-button" disabled={isSubmitting} onClick={() => void declineInvitation()} type="button">
+          초대 거절
+        </button>
+      </form>
+    </main>
+  );
+}
+
 function ChatDesk({
   authSession,
   currentUser,
+  initialInviteCode,
   onLogout,
   users
 }: {
   authSession: AuthSession;
   currentUser: User;
+  initialInviteCode: string;
   onLogout: () => void;
   users: User[];
 }) {
-  const initialRoomPresentation = getRoomPresentationForViewer(demoRoom, demoRoomMembers, users, currentUser.id);
+  const initialRoomMembers = mergeCurrentMembership(demoRoomMembers, currentUser, authSession.role, authSession.createdAt);
+  const initialRoomPresentation = getRoomPresentationForViewer(demoRoom, initialRoomMembers, users, currentUser.id);
   const initialVisibleMemberIds = new Set(initialRoomPresentation.visibleMemberIds);
   const [roomPresentation, setRoomPresentation] = useState<RoomPresentation>(initialRoomPresentation);
   const [roomUsers, setRoomUsers] = useState<User[]>(users.filter((user) => initialVisibleMemberIds.has(user.id)));
   const [roomMembers, setRoomMembers] = useState<RoomMember[]>(
-    demoRoomMembers.filter((member) => initialVisibleMemberIds.has(member.userId))
+    initialRoomMembers.filter((member) => initialVisibleMemberIds.has(member.userId))
   );
   const [messages, setMessages] = useState<Message[]>(
     demoMessages
-      .map((message) => projectMessageForViewer(message, demoRoom, demoRoomMembers, currentUser.id))
+      .map((message) => projectMessageForViewer(message, demoRoom, initialRoomMembers, currentUser.id))
       .filter((message): message is Message => Boolean(message))
   );
   const [aiJobs, setAiJobs] = useState<AiJob[]>(demoAiJobs);
-  const [invites, setInvites] = useState<Invite[]>([]);
+  const [invitations, setInvitations] = useState<MembershipInvitationView[]>([]);
+  const [sessions, setSessions] = useState<DeviceSessionView[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKey>("files");
   const [selectedMessageId, setSelectedMessageId] = useState(demoMessages[0]?.id ?? "");
   const [audienceType, setAudienceType] = useState<AudienceType>("all");
@@ -341,11 +601,21 @@ function ChatDesk({
   const [composer, setComposer] = useState("");
   const [requiresConfirmation, setRequiresConfirmation] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("customer@example.com");
+  const [inviteRole, setInviteRole] = useState<"member" | "guest">("guest");
+  const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicy>("owner_and_invitee");
+  const [requiredApprovalCount, setRequiredApprovalCount] = useState(2);
+  const [latestInviteCode, setLatestInviteCode] = useState("");
+  const [receivedInviteCode, setReceivedInviteCode] = useState(initialInviteCode);
+  const [acceptExistingTerms, setAcceptExistingTerms] = useState(false);
+  const [acceptExistingPrivacy, setAcceptExistingPrivacy] = useState(false);
+  const [acceptExistingGroupJoin, setAcceptExistingGroupJoin] = useState(false);
   const [notice, setNotice] = useState("외부 게스트는 초대받은 방과 파일만 볼 수 있습니다.");
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
+  const [isInvitationAction, setIsInvitationAction] = useState(false);
+  const [isSessionAction, setIsSessionAction] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isConfirmingRead, setIsConfirmingRead] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -385,7 +655,11 @@ function ChatDesk({
     setSyncError("");
 
     try {
-      const snapshot = await getJson<MvpSnapshot>("/mvp");
+      const [snapshot, invitationRows, sessionRows] = await Promise.all([
+        getJson<MvpSnapshot>("/mvp"),
+        getJson<MembershipInvitationView[]>("/invitations"),
+        getJson<DeviceSessionView[]>("/auth/sessions")
+      ]);
       const nextUsers = mergeCurrentUser(snapshot.users, currentUser);
 
       setRoomPresentation(snapshot.room);
@@ -393,7 +667,8 @@ function ChatDesk({
       setRoomMembers(snapshot.roomMembers);
       setMessages(snapshot.messages);
       setAiJobs(snapshot.aiJobs);
-      setInvites(snapshot.invites);
+      setInvitations(invitationRows);
+      setSessions(sessionRows);
 
       if (!snapshot.messages.some((message) => message.id === selectedMessageId)) {
         setSelectedMessageId(snapshot.messages[0]?.id ?? "");
@@ -486,18 +761,110 @@ function ChatDesk({
 
     setIsInviting(true);
     try {
-      const invite = await postJson<Invite>("/invites", {
+      const invite = await postJson<CreatedMembershipInvitation>("/invitations", {
+        approvalPolicy,
         email,
-        role: "guest"
+        ...(approvalPolicy === "quorum_and_invitee" ? { requiredApprovalCount } : {}),
+        role: inviteRole
       });
 
-      setInvites((current) => [invite, ...current]);
-      setNotice(`${invite.email} 게스트 초대장이 서버에 저장되었습니다. 다운로드와 전달 권한은 제한됩니다.`);
+      setInvitations((current) => [invite, ...current.filter((candidate) => candidate.id !== invite.id)]);
+      setLatestInviteCode(invite.inviteCode);
+      setNotice(`${invite.email} 초대가 저장되었습니다. 초대 코드는 지금 한 번만 표시됩니다.`);
       setInviteEmail("");
     } catch (error) {
       setNotice(`게스트 초대 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
     } finally {
       setIsInviting(false);
+    }
+  }
+
+  async function copyInviteCode() {
+    if (!latestInviteCode) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(latestInviteCode);
+      setNotice("초대 코드를 클립보드에 복사했습니다.");
+    } catch {
+      setNotice("클립보드 복사에 실패했습니다. 표시된 코드를 직접 선택해 주세요.");
+    }
+  }
+
+  async function decideInvitation(invitationId: string, decision: "approved" | "rejected") {
+    setIsInvitationAction(true);
+    try {
+      const updated = await postJson<MembershipInvitationView>(`/invitations/${invitationId}/decision`, { decision });
+      setInvitations((current) => current.map((invitation) => invitation.id === updated.id ? updated : invitation));
+      setNotice(decision === "approved" ? "가입 승인을 저장했습니다." : "가입 거절을 저장했습니다.");
+    } catch (error) {
+      setNotice(`승인 처리 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsInvitationAction(false);
+    }
+  }
+
+  async function revokeInvitation(invitationId: string) {
+    setIsInvitationAction(true);
+    try {
+      const updated = await postJson<MembershipInvitationView>(`/invitations/${invitationId}/revoke`, {});
+      setInvitations((current) => current.map((invitation) => invitation.id === updated.id ? updated : invitation));
+      setNotice("초대를 취소했습니다.");
+    } catch (error) {
+      setNotice(`초대 취소 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsInvitationAction(false);
+    }
+  }
+
+  async function acceptReceivedInvitation() {
+    if (!receivedInviteCode.trim()) {
+      return;
+    }
+    setIsInvitationAction(true);
+    try {
+      const accepted = await postJson<InvitationAcceptanceResult>("/invitations/accept", {
+        acceptGroupJoin: acceptExistingGroupJoin,
+        acceptPrivacy: acceptExistingPrivacy,
+        acceptTerms: acceptExistingTerms,
+        inviteCode: receivedInviteCode.trim()
+      });
+      setReceivedInviteCode("");
+      setAcceptExistingTerms(false);
+      setAcceptExistingPrivacy(false);
+      setAcceptExistingGroupJoin(false);
+      setNotice(accepted.loginAllowed ? "초대 가입이 완료되었습니다." : "초대 수락이 저장되었고 구성원 승인을 기다립니다.");
+      setInvitations(await getJson<MembershipInvitationView[]>("/invitations"));
+    } catch (error) {
+      setNotice(`초대 수락 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsInvitationAction(false);
+    }
+  }
+
+  async function revokeDeviceSession(sessionId: string) {
+    setIsSessionAction(true);
+    try {
+      await postJson<{ ok: boolean }>(`/auth/sessions/${sessionId}/revoke`, {});
+      setSessions((current) => current.filter((session) => session.id !== sessionId));
+      setNotice("선택한 기기 세션을 종료했습니다.");
+    } catch (error) {
+      setNotice(`세션 종료 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsSessionAction(false);
+    }
+  }
+
+  async function revokeOtherDeviceSessions() {
+    setIsSessionAction(true);
+    try {
+      const result = await postJson<{ ok: boolean; revokedCount: number }>("/auth/sessions/revoke-others", {});
+      setSessions((current) => current.filter((session) => session.current));
+      setNotice(`다른 기기 세션 ${result.revokedCount}개를 종료했습니다.`);
+    } catch (error) {
+      setNotice(`다른 기기 종료 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsSessionAction(false);
     }
   }
 
@@ -960,19 +1327,44 @@ function ChatDesk({
         <div className="panel-content">
           <PanelBody
             activePanel={activePanel}
+            acceptExistingGroupJoin={acceptExistingGroupJoin}
+            acceptExistingPrivacy={acceptExistingPrivacy}
+            acceptExistingTerms={acceptExistingTerms}
+            approvalPolicy={approvalPolicy}
             attachments={attachments.map((item) => item.attachment)}
             canInviteGuests={authSession.permissions.canInviteGuests}
             currentUser={currentUser}
-            invites={invites}
+            invitations={invitations}
             inviteEmail={inviteEmail}
+            inviteRole={inviteRole}
             isConfirmingRead={isConfirmingRead}
+            isInvitationAction={isInvitationAction}
             isInviting={isInviting}
+            isSessionAction={isSessionAction}
+            latestInviteCode={latestInviteCode}
             notice={notice}
+            onAcceptExistingGroupJoinChange={setAcceptExistingGroupJoin}
+            onAcceptExistingPrivacyChange={setAcceptExistingPrivacy}
+            onAcceptExistingTermsChange={setAcceptExistingTerms}
+            onAcceptReceivedInvitation={() => void acceptReceivedInvitation()}
+            onApprovalPolicyChange={setApprovalPolicy}
             onConfirmRead={() => void confirmSelectedRead()}
+            onCopyInviteCode={() => void copyInviteCode()}
             onCreateInvite={() => void createInvite()}
+            onDecideInvitation={(invitationId, decision) => void decideInvitation(invitationId, decision)}
             onInviteEmailChange={setInviteEmail}
+            onInviteRoleChange={setInviteRole}
+            onReceivedInviteCodeChange={setReceivedInviteCode}
+            onRequiredApprovalCountChange={setRequiredApprovalCount}
+            onRevokeInvitation={(invitationId) => void revokeInvitation(invitationId)}
+            onRevokeOtherSessions={() => void revokeOtherDeviceSessions()}
+            onRevokeSession={(sessionId) => void revokeDeviceSession(sessionId)}
+            receivedInviteCode={receivedInviteCode}
+            requiredApprovalCount={requiredApprovalCount}
+            roomMembers={roomMembers}
             selectedMessage={selectedMessage}
             selectedPdf={selectedPdf}
+            sessions={sessions}
             users={roomUsers}
             aiJobs={aiJobs}
           />
@@ -984,36 +1376,86 @@ function ChatDesk({
 
 function PanelBody({
   activePanel,
+  acceptExistingGroupJoin,
+  acceptExistingPrivacy,
+  acceptExistingTerms,
+  approvalPolicy,
   attachments,
   canInviteGuests,
   currentUser,
-  invites,
+  invitations,
   inviteEmail,
+  inviteRole,
   isConfirmingRead,
+  isInvitationAction,
   isInviting,
+  isSessionAction,
+  latestInviteCode,
   notice,
+  onAcceptExistingGroupJoinChange,
+  onAcceptExistingPrivacyChange,
+  onAcceptExistingTermsChange,
+  onAcceptReceivedInvitation,
+  onApprovalPolicyChange,
   onConfirmRead,
+  onCopyInviteCode,
   onCreateInvite,
+  onDecideInvitation,
   onInviteEmailChange,
+  onInviteRoleChange,
+  onReceivedInviteCodeChange,
+  onRequiredApprovalCountChange,
+  onRevokeInvitation,
+  onRevokeOtherSessions,
+  onRevokeSession,
+  receivedInviteCode,
+  requiredApprovalCount,
+  roomMembers,
   selectedMessage,
   selectedPdf,
+  sessions,
   users,
   aiJobs
 }: {
   activePanel: PanelKey;
+  acceptExistingGroupJoin: boolean;
+  acceptExistingPrivacy: boolean;
+  acceptExistingTerms: boolean;
+  approvalPolicy: ApprovalPolicy;
   attachments: Attachment[];
   canInviteGuests: boolean;
   currentUser: User;
-  invites: Invite[];
+  invitations: MembershipInvitationView[];
   inviteEmail: string;
+  inviteRole: "member" | "guest";
   isConfirmingRead: boolean;
+  isInvitationAction: boolean;
   isInviting: boolean;
+  isSessionAction: boolean;
+  latestInviteCode: string;
   notice: string;
+  onAcceptExistingGroupJoinChange: (value: boolean) => void;
+  onAcceptExistingPrivacyChange: (value: boolean) => void;
+  onAcceptExistingTermsChange: (value: boolean) => void;
+  onAcceptReceivedInvitation: () => void;
+  onApprovalPolicyChange: (value: ApprovalPolicy) => void;
   onConfirmRead: () => void;
+  onCopyInviteCode: () => void;
   onCreateInvite: () => void;
+  onDecideInvitation: (invitationId: string, decision: "approved" | "rejected") => void;
   onInviteEmailChange: (value: string) => void;
+  onInviteRoleChange: (value: "member" | "guest") => void;
+  onReceivedInviteCodeChange: (value: string) => void;
+  onRequiredApprovalCountChange: (value: number) => void;
+  onRevokeInvitation: (invitationId: string) => void;
+  onRevokeOtherSessions: () => void;
+  onRevokeSession: (sessionId: string) => void;
+  receivedInviteCode: string;
+  requiredApprovalCount: number;
+  roomMembers: RoomMember[];
   selectedMessage: Message;
   selectedPdf: Attachment | undefined;
+  sessions: DeviceSessionView[];
   users: User[];
   aiJobs: AiJob[];
 }) {
@@ -1028,50 +1470,177 @@ function PanelBody({
   if (activePanel === "members") {
     return (
       <>
-        <div className="panel-section">
-          <h2 className="panel-title">
-            <Plus size={17} /> 대상 초대
-          </h2>
-          <label className="field">
-            이메일
-            <input className="text-input" disabled={!canInviteGuests || isInviting} value={inviteEmail} onChange={(event) => onInviteEmailChange(event.target.value)} />
-          </label>
-          <button className="primary-button" disabled={!canInviteGuests || isInviting} onClick={onCreateInvite} style={{ marginTop: 10 }} type="button">
-            {isInviting ? "초대 저장 중" : "게스트 초대"}
-          </button>
-        </div>
-        {invites.length > 0 ? (
+        {canInviteGuests ? (
           <div className="panel-section">
             <h2 className="panel-title">
-              <Inbox size={17} /> 최근 초대
+              <Plus size={17} /> 대상 초대
             </h2>
-            {invites.map((invite) => (
-              <div className="invite-row" key={invite.id}>
-                <span>
-                  <strong>{invite.email}</strong>
-                  <span className="tiny" style={{ display: "block" }}>
-                    {formatTime(invite.createdAt)} · {invite.role}
-                  </span>
-                </span>
-                <span className="status-chip">{invite.status}</span>
+            <label className="field">
+              이메일
+              <input className="text-input" disabled={isInviting} type="email" value={inviteEmail} onChange={(event) => onInviteEmailChange(event.target.value)} />
+            </label>
+            <div className="compact-field-grid">
+              <label className="field">
+                역할
+                <select className="text-input" disabled={isInviting} value={inviteRole} onChange={(event) => onInviteRoleChange(event.target.value as "member" | "guest")}>
+                  <option value="guest">외부 게스트</option>
+                  <option value="member">내부 구성원</option>
+                </select>
+              </label>
+              <label className="field">
+                승인 정책
+                <select className="text-input" disabled={isInviting} value={approvalPolicy} onChange={(event) => onApprovalPolicyChange(event.target.value as ApprovalPolicy)}>
+                  <option value="owner_and_invitee">소유자 승인</option>
+                  <option value="admins_and_invitee">관리자 승인</option>
+                  <option value="all_members_and_invitee">구성원 전원</option>
+                  <option value="quorum_and_invitee">정족수 승인</option>
+                </select>
+              </label>
+            </div>
+            {approvalPolicy === "quorum_and_invitee" ? (
+              <label className="field">
+                승인 정족수
+                <input
+                  className="text-input"
+                  max={100}
+                  min={1}
+                  type="number"
+                  value={requiredApprovalCount}
+                  onChange={(event) => onRequiredApprovalCountChange(Number(event.target.value) || 1)}
+                />
+              </label>
+            ) : null}
+            <button className="primary-button" disabled={isInviting} onClick={onCreateInvite} style={{ marginTop: 10 }} type="button">
+              {isInviting ? "초대 생성 중" : "초대 생성"}
+            </button>
+            {latestInviteCode ? (
+              <div className="invite-code-box">
+                <code>{latestInviteCode}</code>
+                <button className="icon-button" onClick={onCopyInviteCode} title="초대 코드 복사" type="button">
+                  <Copy size={17} />
+                </button>
               </div>
-            ))}
+            ) : null}
           </div>
         ) : null}
+
+        <div className="panel-section">
+          <h2 className="panel-title">
+            <KeyRound size={17} /> 받은 초대
+          </h2>
+          <input
+            autoComplete="off"
+            className="text-input"
+            placeholder="초대 코드"
+            value={receivedInviteCode}
+            onChange={(event) => onReceivedInviteCodeChange(event.target.value)}
+          />
+          <div className="consent-list compact-consent-list">
+            <label><input checked={acceptExistingTerms} onChange={(event) => onAcceptExistingTermsChange(event.target.checked)} type="checkbox" /> 이용약관</label>
+            <label><input checked={acceptExistingPrivacy} onChange={(event) => onAcceptExistingPrivacyChange(event.target.checked)} type="checkbox" /> 개인정보</label>
+            <label><input checked={acceptExistingGroupJoin} onChange={(event) => onAcceptExistingGroupJoinChange(event.target.checked)} type="checkbox" /> 그룹 가입</label>
+          </div>
+          <button
+            className="secondary-button"
+            disabled={isInvitationAction || !receivedInviteCode.trim()}
+            onClick={onAcceptReceivedInvitation}
+            type="button"
+          >
+            <UserCheck size={17} /> 초대 수락
+          </button>
+        </div>
+
+        {invitations.length > 0 ? (
+          <div className="panel-section">
+            <h2 className="panel-title">
+              <Inbox size={17} /> 초대와 승인
+            </h2>
+            <div className="invitation-list">
+              {invitations.map((invitation) => (
+                <div className="invitation-item" key={invitation.id}>
+                  <div className="invitation-heading">
+                    <span>
+                      <strong>{invitation.email}</strong>
+                      <span className="tiny" style={{ display: "block" }}>
+                        {invitation.role === "guest" ? "게스트" : "구성원"} · {formatDateTime(invitation.createdAt)}
+                      </span>
+                    </span>
+                    <span className="status-chip">{invitationStatusLabel(invitation.status)}</span>
+                  </div>
+                  {invitation.canManage && invitation.requiredApprovalCount !== undefined ? (
+                    <div className="approval-meter">
+                      <span style={{ width: `${Math.min(100, ((invitation.approvedCount ?? 0) / invitation.requiredApprovalCount) * 100)}%` }} />
+                    </div>
+                  ) : null}
+                  <div className="invitation-actions">
+                    {invitation.canDecide ? (
+                      <>
+                        <button className="secondary-button" disabled={isInvitationAction} onClick={() => onDecideInvitation(invitation.id, "approved")} type="button">
+                          <UserCheck size={16} /> 승인
+                        </button>
+                        <button className="secondary-button" disabled={isInvitationAction} onClick={() => onDecideInvitation(invitation.id, "rejected")} type="button">
+                          <XCircle size={16} /> 거절
+                        </button>
+                      </>
+                    ) : null}
+                    {invitation.canManage && ["pending_approval", "sent"].includes(invitation.status) ? (
+                      <button className="icon-button" disabled={isInvitationAction} onClick={() => onRevokeInvitation(invitation.id)} title="초대 취소" type="button">
+                        <XCircle size={17} />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="panel-section">
           <h2 className="panel-title">
             <Users size={17} /> 참여자
           </h2>
-          {users.map((user) => (
-            <div className="member-row" key={user.id}>
-              <img alt="" src={user.character.thumbnailUrl} />
-              <span>
-                <strong>{user.displayName}</strong>
-                <span className="tiny" style={{ display: "block" }}>
-                  {user.email}
+          {users.map((user) => {
+            const memberRole = roomMembers.find((membership) => membership.userId === user.id)?.role;
+            return (
+              <div className="member-row" key={user.id}>
+                <img alt="" src={user.character.thumbnailUrl} />
+                <span>
+                  <strong>{user.displayName}</strong>
+                  <span className="tiny" style={{ display: "block" }}>
+                    {user.email}
+                  </span>
                 </span>
+                {memberRole === "guest" || memberRole === "subscriber"
+                  ? <span className="guest-chip">게스트</span>
+                  : <span className="tiny">내부</span>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="panel-section">
+          <div className="panel-title-row">
+            <h2 className="panel-title">
+              <ShieldCheck size={17} /> 내 기기 세션
+            </h2>
+            {sessions.some((session) => !session.current) ? (
+              <button className="icon-button" disabled={isSessionAction} onClick={onRevokeOtherSessions} title="다른 기기 모두 종료" type="button">
+                <LogOut size={16} />
+              </button>
+            ) : null}
+          </div>
+          {sessions.map((session) => (
+            <div className="session-row" key={session.id}>
+              <span>
+                <strong>{session.current ? "현재 기기" : "다른 기기"}</strong>
+                <span className="tiny session-agent">{session.userAgent}</span>
+                <span className="tiny">최근 {formatDateTime(session.lastSeenAt)}</span>
               </span>
-              {user.id.startsWith("guest") ? <span className="guest-chip">게스트</span> : <span className="tiny">내부</span>}
+              {!session.current ? (
+                <button className="icon-button" disabled={isSessionAction} onClick={() => onRevokeSession(session.id)} title="이 세션 종료" type="button">
+                  <LogOut size={16} />
+                </button>
+              ) : <span className="audience-chip">사용 중</span>}
             </div>
           ))}
         </div>
@@ -1325,6 +1894,26 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit"
+  }).format(new Date(value));
+}
+
+function invitationStatusLabel(status: MembershipInvitationView["status"]) {
+  return {
+    accepted: "가입 완료",
+    declined: "거절",
+    expired: "만료",
+    pending_approval: "승인 대기",
+    revoked: "취소",
+    sent: "수락 대기"
+  }[status];
+}
+
 function formatBytes(size: number) {
   if (size < 1024) {
     return `${size} B`;
@@ -1375,6 +1964,26 @@ function mergeCurrentUser(users: User[], currentUser: User) {
   }
 
   return [currentUser, ...mergedUsers];
+}
+
+function mergeCurrentMembership(
+  memberships: RoomMember[],
+  currentUser: User,
+  role: AuthSession["role"],
+  joinedAt: string
+) {
+  const membership: RoomMember = {
+    joinedAt,
+    role,
+    roomId: demoRoom.id,
+    userId: currentUser.id,
+    viewMode: currentUser.id === demoRoom.ownerId ? "owner_console" : "direct_with_owner"
+  };
+  const existingIndex = memberships.findIndex((candidate) => candidate.userId === currentUser.id);
+  if (existingIndex < 0) {
+    return [...memberships, membership];
+  }
+  return memberships.map((candidate, index) => index === existingIndex ? { ...candidate, ...membership } : candidate);
 }
 
 function attachPreviewUrl(message: Message, objectUrl: string): Message {

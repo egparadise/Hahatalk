@@ -1,13 +1,11 @@
 import { Body, Controller, ForbiddenException, Get, Inject, Param, Post } from "@nestjs/common";
 import {
-  type ApprovalPolicy,
   type AudienceType,
   type CreateAttachmentMessageInput,
-  type CreateInviteInput,
   type MemberRole,
   type SendMessageInput
 } from "@hahatalk/contracts";
-import { IsArray, IsBoolean, IsEmail, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from "class-validator";
+import { IsArray, IsBoolean, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from "class-validator";
 import { CurrentAuth, PublicRoute } from "../auth/auth.decorators.js";
 import type { AuthPrincipal } from "../auth/auth.types.js";
 import { DatabaseService } from "../database/database.service.js";
@@ -31,18 +29,6 @@ class SendMessageDto {
 
   @IsBoolean()
   requiresConfirmation = false;
-}
-
-class CreateInviteDto {
-  @IsEmail()
-  email = "";
-
-  @IsIn(["member", "guest"])
-  role: "member" | "guest" = "guest";
-
-  @IsOptional()
-  @IsIn(["owner_and_invitee", "admins_and_invitee", "all_members_and_invitee", "quorum_and_invitee"])
-  approvalPolicy?: ApprovalPolicy;
 }
 
 class CreateAttachmentMessageDto {
@@ -125,15 +111,6 @@ export class ChatController {
   confirmRead(@Param("messageId") messageId: string, @CurrentAuth() principal: AuthPrincipal) {
     const userId = this.ensureViewer(principal);
     return this.store.confirmRead(messageId, { userId });
-  }
-
-  @Post("invites")
-  createInvite(@Body() body: CreateInviteDto, @CurrentAuth() principal: AuthPrincipal) {
-    if (!principal.state.permissions.canInviteGuests) {
-      throw new ForbiddenException("Guest invitation permission is required.");
-    }
-    const invitedBy = this.ensureViewer(principal);
-    return this.store.createInvite({ ...body, invitedBy } as CreateInviteInput);
   }
 
   @Post("attachments")

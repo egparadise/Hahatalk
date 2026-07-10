@@ -76,6 +76,10 @@ Decision: Argon2id passwords and opaque stateful sessions, not bearer tokens in 
 
 - OWASP recommends Argon2id and provides a 19 MiB/two-iteration/one-lane baseline used by Stage 2A: [OWASP password storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
 - OWASP warns against authentication tokens in web storage. HahaTalk returns no token field, stores the cookie as HttpOnly/SameSite=Strict, and stores only its SHA-256 digest in PostgreSQL: [OWASP session management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
+- Stage 2B applies OWASP's secure reset-token properties to invitations: CSPRNG generation, sufficient length, user linkage, secure digest storage, single use, expiry, and attempt throttling: [OWASP forgot password](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html).
+- Approval authorization is server-enforced, deny-by-default, relationship-aware, and rechecked per request: [OWASP authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html), [OWASP transaction authorization](https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html).
+- Invitation, consent, approval, revoke, and membership activation records include actor/action/result context but exclude raw secrets: [OWASP logging](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html).
+- Nest `@nestjs/throttler` 6.5.0 supplies the single-process route guard. Its custom storage boundary is reserved for Redis before horizontal scaling: [NestJS rate limiting](https://docs.nestjs.com/security/rate-limiting).
 - Unsafe browser requests require an exact Origin and a custom header in addition to SameSite and strict credentialed CORS: [OWASP CSRF prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
 
 ## Object Storage Update

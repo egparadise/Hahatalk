@@ -37,12 +37,14 @@ Exit: HahaTalk starts from an installed Windows executable without Node.js or de
 
 ### Stage 2B - Invitations, Devices, And Consent
 
-1. Invitation/email verification and owner/admin/all-member/quorum approval workflow.
-2. Session rotation, device list, revoke-all, and Redis-backed login throttling.
-3. Passkey and enterprise SSO adapters.
-4. Consent center and append-only policy-versioned audit history.
+1. SHA-256-digested one-time invitation code, expiry, revoke, decline, and use-count enforcement. Complete.
+2. Owner/admin/all-member/quorum approval requirement snapshot and immutable per-approver decision. Complete.
+3. Unclaimed guest activation, existing-account acceptance, pending membership, and guest-safe hub projection. Complete.
+4. Terms/privacy/group-join policy-versioned consent and invitation audit timeline. Complete.
+5. Device list, single-session revoke, revoke-other-sessions, and local Nest throttling. Complete.
+6. External email delivery, Redis-distributed throttle storage, passkeys, and enterprise SSO adapters. Deferred to deployment/identity integration.
 
-Exit: a new user accepts an invitation, required approvers consent, the session survives restart, and revoked invitations fail.
+Exit: fresh-DB and installed-Windows tests prove one success under concurrent acceptance, approval/rejection/quorum behavior, guest privacy, consent/audit evidence, expiry/revoke/reuse denial, device revoke, throttling, and real UI guest login. Complete.
 
 ## Stage 3 - Conversation Core
 

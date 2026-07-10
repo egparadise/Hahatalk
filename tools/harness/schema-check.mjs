@@ -18,6 +18,7 @@ const requiredTables = [
   "space_memberships",
   "hub_spokes",
   "invitations",
+  "invitation_approval_requirements",
   "invitation_approvals",
   "messages",
   "message_audiences",
@@ -69,7 +70,9 @@ const requiredFragments = [
   "remote_control",
   "outbox_events_unpublished_idx",
   "token_hash bytea",
-  "session_auth_version"
+  "session_auth_version",
+  "token_digest bytea",
+  "bootstrap_claim_allowed"
 ];
 
 for (const fragment of requiredFragments) {
@@ -91,7 +94,8 @@ const governanceFiles = [
   ".codex/agents/architecture-researcher.toml",
   ".codex/agents/privacy-reviewer.toml",
   ".codex/agents/feature-worker.toml",
-  "apps/api/migrations/001_auth_foundation.sql"
+  "apps/api/migrations/001_auth_foundation.sql",
+  "apps/api/migrations/002_invitation_consent_guest_approval.sql"
 ];
 
 for (const file of governanceFiles) {

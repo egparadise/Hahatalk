@@ -121,7 +121,20 @@ function closeServer(server) {
       resolve();
       return;
     }
-    server.close(() => resolve());
+    let completed = false;
+    const timeout = setTimeout(() => finish(), 1_000);
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeout);
+      resolve();
+    };
+    try {
+      server.close(finish);
+      server.closeAllConnections?.();
+    } catch {
+      finish();
+    }
   });
 }
 
@@ -476,6 +489,9 @@ async function stopRuntime() {
   runtimeReady = false;
   runtimeStatus = null;
   removeRuntimeStatus();
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.destroy();
+  }
   runtime?.apiProcess?.kill();
   await closeServer(runtime?.staticServer);
   runtime = null;

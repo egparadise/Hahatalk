@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import {
   createAuthSession,
   demoOrganization,
@@ -9,26 +9,22 @@ import {
   type LoginInput,
   type MemberRole,
   type SignupInput,
+  type DeviceSessionView,
   type User
 } from "@hahatalk/contracts";
-import { argon2id, hash, needsRehash, verify } from "argon2";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service.js";
 import { readSessionToken } from "./auth-cookie.js";
+import { hashPassword, passwordNeedsRehash, verifyPassword } from "./password.js";
 import type { AuthPrincipal, CreatedAuthSession } from "./auth.types.js";
 
 const organizationId = "00000000-0000-4000-8000-000000000001";
-const passwordHashOptions = {
-  memoryCost: 19_456,
-  parallelism: 1,
-  timeCost: 2,
-  type: argon2id
-} as const;
 const absoluteSessionMilliseconds = 12 * 60 * 60 * 1_000;
 const idleSessionMilliseconds = 2 * 60 * 60 * 1_000;
 
 type AccountRow = {
   auth_version: number;
+  bootstrap_claim_allowed: boolean;
   character_id: string | null;
   created_at: Date;
   display_name: string;
@@ -49,6 +45,14 @@ type SessionRow = AccountRow & {
   session_id: string;
 };
 
+type DeviceSessionRow = {
+  created_at: Date;
+  expires_at: Date;
+  id: string;
+  last_seen_at: Date;
+  user_agent: string | null;
+};
+
 function tokenHash(token: string) {
   return createHash("sha256").update(token).digest();
 }
@@ -63,14 +67,12 @@ function isUniqueViolation(error: unknown): error is { code: string } {
 
 @Injectable()
 export class AuthService {
-  private readonly dummyPasswordHash = hash("HahaTalk dummy password material", passwordHashOptions);
-
   constructor(private readonly database: DatabaseService) {}
 
   async signup(input: SignupInput, userAgent?: string): Promise<CreatedAuthSession> {
     const email = normalizeEmail(input.email);
     const displayName = input.displayName.trim();
-    const passwordHash = await hash(input.password, passwordHashOptions);
+    const passwordHash = await hashPassword(input.password);
     const character = findCharacterPreset(input.characterId);
 
     let publicId: string;
@@ -87,10 +89,13 @@ export class AuthService {
         }
 
         if (account) {
+          if (!account.bootstrap_claim_allowed && process.env.HAHATALK_ALLOW_OPEN_SIGNUP !== "true") {
+            throw new ForbiddenException("A valid invitation is required for this email.");
+          }
           await client.query(
             `update users
              set display_name = $2, password_hash = $3, status = 'active', account_claimed_at = now(),
-                 password_changed_at = now(), updated_at = now()
+                 password_changed_at = now(), bootstrap_claim_allowed = false, updated_at = now()
              where id = $1`,
             [account.internal_user_id, displayName, passwordHash]
           );
@@ -103,6 +108,10 @@ export class AuthService {
           await this.upsertProfile(client, account.internal_user_id, character.id);
           await this.writeAudit(client, account.organization_id, account.internal_user_id, "auth.account_claimed", account.internal_user_id);
           return account.public_id;
+        }
+
+        if (process.env.HAHATALK_ALLOW_OPEN_SIGNUP !== "true") {
+          throw new ForbiddenException("A valid invitation is required for this email.");
         }
 
         const internalUserId = randomUUID();
@@ -136,15 +145,14 @@ export class AuthService {
     const email = normalizeEmail(input.email);
     const accountResult = await this.database.query<AccountRow>(this.accountSelect("where u.email = $1"), [email]);
     const account = accountResult.rows[0];
-    const passwordHash = account?.password_hash ?? await this.dummyPasswordHash;
-    const passwordMatches = await verify(passwordHash, input.password).catch(() => false);
+    const { candidateHash: passwordHash, matches: passwordMatches } = await verifyPassword(account?.password_hash, input.password);
 
     if (!account || !passwordMatches || account.status !== "active" || account.membership_status !== "active") {
       throw new UnauthorizedException("Email or password is incorrect.");
     }
 
-    if (needsRehash(passwordHash, passwordHashOptions)) {
-      const upgradedHash = await hash(input.password, passwordHashOptions);
+    if (passwordNeedsRehash(passwordHash)) {
+      const upgradedHash = await hashPassword(input.password);
       await this.database.query(
         "update users set password_hash = $2, password_changed_at = now(), updated_at = now() where id = $1",
         [account.internal_user_id, upgradedHash]
@@ -176,6 +184,7 @@ export class AuthService {
          u.display_name,
          u.status,
          u.auth_version,
+         u.bootstrap_claim_allowed,
          u.last_seen_at,
          u.created_at,
          om.organization_id,
@@ -229,6 +238,69 @@ export class AuthService {
         "auth.session_revoked",
         principal.sessionId
       );
+    });
+  }
+
+  async listSessions(principal: AuthPrincipal): Promise<DeviceSessionView[]> {
+    const result = await this.database.query<DeviceSessionRow>(
+      `select id, user_agent, created_at, last_seen_at, expires_at
+       from web_sessions
+       where user_id = $1 and revoked_at is null and expires_at > now() and idle_expires_at > now()
+       order by last_seen_at desc`,
+      [principal.internalUserId]
+    );
+
+    return result.rows.map((row) => ({
+      createdAt: row.created_at.toISOString(),
+      current: row.id === principal.sessionId,
+      expiresAt: row.expires_at.toISOString(),
+      id: row.id,
+      lastSeenAt: row.last_seen_at.toISOString(),
+      userAgent: row.user_agent || "알 수 없는 기기"
+    }));
+  }
+
+  async revokeSession(principal: AuthPrincipal, sessionId: string) {
+    const result = await this.database.transaction(async (client) => {
+      const revoked = await client.query<{ id: string }>(
+        `update web_sessions
+         set revoked_at = now(), revoke_reason = 'user_session_revoke'
+         where id = $1 and user_id = $2 and revoked_at is null
+         returning id`,
+        [sessionId, principal.internalUserId]
+      );
+      if (!revoked.rowCount) {
+        throw new NotFoundException("Active session was not found.");
+      }
+      await this.writeAudit(
+        client,
+        principal.state.user.organizationId,
+        principal.internalUserId,
+        "auth.session_revoked_by_user",
+        sessionId
+      );
+      return revoked.rows[0]!;
+    });
+
+    return { current: result.id === principal.sessionId, ok: true };
+  }
+
+  async revokeOtherSessions(principal: AuthPrincipal) {
+    return this.database.transaction(async (client) => {
+      const revoked = await client.query(
+        `update web_sessions
+         set revoked_at = now(), revoke_reason = 'user_revoke_other_sessions'
+         where user_id = $1 and id <> $2 and revoked_at is null`,
+        [principal.internalUserId, principal.sessionId]
+      );
+      await this.writeAudit(
+        client,
+        principal.state.user.organizationId,
+        principal.internalUserId,
+        "auth.other_sessions_revoked",
+        principal.sessionId
+      );
+      return { ok: true, revokedCount: revoked.rowCount ?? 0 };
     });
   }
 
@@ -307,6 +379,7 @@ export class AuthService {
         u.display_name,
         u.status,
         u.auth_version,
+        u.bootstrap_claim_allowed,
         u.last_seen_at,
         u.created_at,
         om.organization_id,

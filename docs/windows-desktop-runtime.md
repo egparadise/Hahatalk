@@ -71,7 +71,8 @@ apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe
 ## Release Limitations
 
 - The current installer is unsigned. Windows code signing is required before external distribution to avoid trust warnings and to support a production update channel.
-- Accounts, Argon2id password hashes, sessions, revocation, and auth audit events persist in PostgreSQL. Conversation, invitation, and attachment mutations remain in-memory until Stage 3.
+- Accounts, Argon2id password hashes, sessions, invitations, approval requirements/decisions, consent evidence, and auth audit events persist in PostgreSQL. Conversation and attachment mutations remain in-memory until Stage 3.
+- Runtime manifest version 3 records a SHA-256 entry for every immutable SQL migration, including Stage 2B migration `002`.
 - The Stage 2 development installer needs local PostgreSQL on port 54329. This is a development topology, not the production end-user architecture.
 - The installer currently targets Windows x64. ARM64 is a later build target.
 - Screen capture uses a name-based local selector; thumbnail selection and per-window consent history can be improved later.

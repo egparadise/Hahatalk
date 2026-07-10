@@ -48,6 +48,7 @@ async function startApi(port, webOrigin) {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
+      HAHATALK_ALLOW_OPEN_SIGNUP: "true",
       HAHATALK_MIGRATIONS_DIR: migrationsDirectory,
       PORT: String(port),
       SESSION_COOKIE_NAME: cookieName,

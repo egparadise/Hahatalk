@@ -53,6 +53,7 @@ if (requireRuntime) {
     path.join(desktopRoot, "runtime", "api.cjs"),
     path.join(desktopRoot, "runtime", "runtime-manifest.json"),
     path.join(desktopRoot, "runtime", "migrations", "001_auth_foundation.sql"),
+    path.join(desktopRoot, "runtime", "migrations", "002_invitation_consent_guest_approval.sql"),
     path.join(desktopRoot, "runtime", "node_modules", "argon2", "argon2.cjs"),
     path.join(desktopRoot, "runtime", "web", "index.html")
   ];

@@ -60,7 +60,10 @@ function Stop-HahaTalk {
     $process = Get-Process -Id $Status.pid -ErrorAction SilentlyContinue
   } until (!$process -or (Get-Date) -gt $deadline)
 
-  if ($process) { throw "HahaTalk did not exit after closing its main window." }
+  if ($process) {
+    & taskkill.exe /PID $Status.pid /T /F 2>$null | Out-Null
+    throw "HahaTalk did not exit after closing its main window. The test process tree was cleaned up."
+  }
   Start-Sleep -Milliseconds 500
   if (Test-Path -LiteralPath $statusPath) { throw "HahaTalk runtime status was not removed." }
 

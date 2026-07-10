@@ -76,6 +76,7 @@ async function waitForDebugTarget(port) {
 
 async function connectCdp(webSocketUrl) {
   const socket = new WebSocket(webSocketUrl);
+  const events = [];
   const pending = new Map();
   let requestId = 0;
   await new Promise((resolve, reject) => {
@@ -85,6 +86,7 @@ async function connectCdp(webSocketUrl) {
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data));
     if (!message.id || !pending.has(message.id)) {
+      events.push(message);
       return;
     }
     const { resolve, reject } = pending.get(message.id);
@@ -98,6 +100,7 @@ async function connectCdp(webSocketUrl) {
 
   return {
     close: () => socket.close(),
+    events,
     send(method, params = {}) {
       requestId += 1;
       const id = requestId;
@@ -128,7 +131,24 @@ async function waitForExpression(cdp, expression, message) {
     }
     await delay(125);
   }
-  throw new Error(message);
+  const bodyText = await evaluate(cdp, "document.body.innerText").catch(() => "renderer text unavailable");
+  const runtimeEvents = cdp.events
+    .filter((event) => event.method === "Runtime.exceptionThrown" || event.method === "Runtime.consoleAPICalled")
+    .slice(-4);
+  throw new Error(`${message}\nRenderer text: ${String(bodyText).slice(-1200)}\nRuntime events: ${JSON.stringify(runtimeEvents)}`);
+}
+
+async function captureScreenshot(cdp, screenshotPath, message) {
+  await cdp.send("Page.bringToFront");
+  await evaluate(cdp, `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  await delay(500);
+  const capture = await cdp.send("Page.captureScreenshot", {
+    captureBeyondViewport: false,
+    format: "png",
+    fromSurface: true
+  });
+  await writeFile(screenshotPath, Buffer.from(capture.data, "base64"));
+  assert((await readFile(screenshotPath)).length > 10_000, message);
 }
 
 const desktopPackage = JSON.parse(await readFile(
@@ -141,9 +161,15 @@ const executablePath = path.resolve(argument(
 ));
 const screenshotPath = path.resolve(argument(
   "screenshot",
-  path.join(process.cwd(), "apps", "desktop", "out", "stage2-authenticated.png")
+  path.join(process.cwd(), "apps", "desktop", "out", "stage2b-owner-invitation.png")
+));
+const guestScreenshotPath = path.resolve(argument(
+  "guest-screenshot",
+  path.join(process.cwd(), "apps", "desktop", "out", "stage2b-guest.png")
 ));
 const password = process.env.HAHATALK_SMOKE_PASSWORD ?? "HahaTalk!Stage2";
+const guestEmail = `renderer-guest-${Date.now()}@example.test`;
+const guestPassword = "Stage2B!RendererGuest";
 const statusPath = path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "HahaTalk", "runtime-status.json");
 const debugPort = await findAvailablePort();
 await access(executablePath);
@@ -226,16 +252,107 @@ try {
   assert(headerLayout.actionsInsideHeader, "Header actions overflow the authenticated workspace header.");
   assert(headerLayout.buttonTopSpread <= 1, "Header action buttons wrapped onto multiple rows.");
 
-  const capture = await cdp.send("Page.captureScreenshot", {
-    captureBeyondViewport: false,
-    format: "png",
-    fromSurface: true
-  });
-  await writeFile(screenshotPath, Buffer.from(capture.data, "base64"));
-  assert((await readFile(screenshotPath)).length > 10_000, "Authenticated renderer screenshot is unexpectedly small.");
+  await evaluate(cdp, `document.querySelector('button[title="참여자"]').click()`);
+  await waitForExpression(cdp, `document.body.innerText.includes('대상 초대')`, "Owner invitation panel did not open.");
+  await evaluate(cdp, `
+    (() => {
+      const input = document.querySelector('.right-panel input[type="email"]');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(guestEmail)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      [...document.querySelectorAll('.right-panel button')]
+        .find((button) => button.textContent.trim() === '초대 생성').click();
+    })()
+  `);
+  await waitForExpression(
+    cdp,
+    `document.querySelector('.invite-code-box code')?.textContent.startsWith('hti_')`,
+    "Owner invitation creation did not return a one-time code."
+  );
+  const inviteCode = await evaluate(cdp, `document.querySelector('.invite-code-box code').textContent`);
+  await captureScreenshot(cdp, screenshotPath, "Owner invitation screenshot is unexpectedly small.");
 
   await evaluate(cdp, `document.querySelector('button[title="로그아웃"]').click()`);
   await waitForExpression(cdp, `document.body.innerText.includes('HahaTalk 로그인')`, "Renderer logout did not return to login.");
+  await evaluate(cdp, `
+    [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.trim() === '초대 수락').click()
+  `);
+  await waitForExpression(cdp, `document.body.innerText.includes('HahaTalk 초대 수락')`, "Invitation acceptance screen did not open.");
+  await evaluate(cdp, `
+    (() => {
+      const input = document.querySelector('.auth-panel input');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(inviteCode)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('.auth-panel form, form.auth-panel').requestSubmit();
+    })()
+  `);
+  await waitForExpression(cdp, `document.body.innerText.includes('Inviz 가입')`, "Invitation preview did not reach guest activation.");
+  await evaluate(cdp, `
+    (() => {
+      const setValue = (input, value) => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        setter.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      const labels = [...document.querySelectorAll('.auth-panel label')];
+      setValue(labels.find((label) => label.textContent.includes('이름')).querySelector('input'), 'Renderer Guest');
+      setValue(document.querySelector('.auth-panel input[type="password"]'), ${JSON.stringify(guestPassword)});
+      document.querySelectorAll('.auth-panel input[type="checkbox"]').forEach((checkbox) => {
+        if (!checkbox.checked) checkbox.click();
+      });
+      document.querySelector('form.auth-panel').requestSubmit();
+    })()
+  `);
+  await waitForExpression(cdp, `document.body.innerText.includes('가입 승인 완료')`, "Guest invitation acceptance did not complete.");
+  await evaluate(cdp, `
+    [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.trim() === '로그인으로 이동').click()
+  `);
+  await waitForExpression(cdp, `document.body.innerText.includes('HahaTalk 로그인')`, "Accepted guest did not return to login.");
+  await evaluate(cdp, `
+    (() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      const setValue = (input, value) => {
+        setter.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      setValue(document.querySelector('input[type="email"]'), ${JSON.stringify(guestEmail)});
+      setValue(document.querySelector('input[type="password"]'), ${JSON.stringify(guestPassword)});
+      document.querySelector('form').requestSubmit();
+    })()
+  `);
+  await waitForExpression(
+    cdp,
+    `document.body.innerText.includes('게스트 세션') && Boolean(document.querySelector('button[title="로그아웃"]'))`,
+    "Accepted guest login did not reach the restricted workspace."
+  );
+  await evaluate(cdp, `document.querySelector('button[title="참여자"]').click()`);
+  await waitForExpression(cdp, `document.body.innerText.includes('내 기기 세션')`, "Guest session panel did not open.");
+  assert(
+    await evaluate(cdp, `!document.querySelector('.right-panel').innerText.includes('대상 초대')`),
+    "Guest renderer exposed invitation management controls."
+  );
+  assert(
+    await evaluate(cdp, `document.body.innerText.includes('1:1 대화')`),
+    "Guest renderer exposed the hub as a group conversation."
+  );
+  assert(
+    await evaluate(cdp, `
+      [...document.querySelectorAll('.member-row')]
+        .find((row) => row.innerText.includes('Renderer Guest'))?.innerText.includes('게스트')
+    `),
+    "Dynamic guest membership was not labeled as guest."
+  );
+  await captureScreenshot(cdp, guestScreenshotPath, "Guest restriction screenshot is unexpectedly small.");
+
+  await evaluate(cdp, `document.querySelector('button[title="로그아웃"]').click()`);
+  await waitForExpression(cdp, `document.body.innerText.includes('HahaTalk 로그인')`, "Guest renderer logout did not return to login.");
   await Promise.race([
     cdp.send("Browser.close").catch(() => undefined),
     delay(500)
@@ -256,7 +373,7 @@ try {
   }
   assert(statusRemoved, "HahaTalk runtime status remained after renderer smoke shutdown.");
   assert(!isProcessRunning(application.pid), "HahaTalk process remained after renderer smoke shutdown.");
-  console.log(`Windows renderer auth check passed: ${runtime.version}, screenshot ${screenshotPath}`);
+  console.log(`Windows renderer invitation check passed: ${runtime.version}, owner ${screenshotPath}, guest ${guestScreenshotPath}`);
 } finally {
   cdp?.close();
   if (isProcessRunning(application.pid)) {
