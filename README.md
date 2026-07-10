@@ -1,6 +1,6 @@
 # HahaTalk / 인비즈톡
 
-HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups, an owner-centered private hub, and personal broadcasting. It currently runs as a PC web/Electron MVP with a NestJS API and shared TypeScript contracts; Android and iOS clients are staged after the persisted conversation API.
+HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups, an owner-centered private hub, and personal broadcasting. It runs as a PC web MVP and as a self-starting Windows Electron application with an embedded NestJS API; Android and iOS clients are staged after the persisted conversation API.
 
 ## What Runs Today
 
@@ -18,6 +18,8 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Read report panel with read time, unread users, and confirmation state.
 - Pop-out window affordances for chat and document views.
 - Async AI/STT/TTS placeholders that do not block chat.
+- A Windows x64 package and Squirrel installer that start without Node.js, npm, or separate development servers.
+- Single-instance protection, dynamic loopback ports, runtime health evidence, secure navigation, and clean API shutdown.
 
 ## Commands
 
@@ -26,6 +28,10 @@ npm install
 npm run dev:web
 npm run dev:api
 npm run dev:desktop
+npm run desktop:runtime
+npm run desktop:package
+npm run desktop:make
+npm run desktop:check
 npm run typecheck
 npm run build
 npm run smoke
@@ -34,6 +40,8 @@ npm run harness
 ```
 
 The web MVP runs at `http://127.0.0.1:3000`.
+
+The Windows installer is generated at `apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe`. It is currently unsigned and intended for local development validation until a Windows code-signing certificate is configured.
 
 ## Project Operations
 
@@ -62,4 +70,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/technology-decisions-2026-07-10.md`: researched model, media, mobile, and remote-support choices.
 - `docs/development-roadmap-v2.md`: staged path through production release.
 - `docs/security-threat-model.md`: privacy boundaries and mandatory leakage tests.
+- `docs/windows-desktop-runtime.md`: packaged Windows startup, security, build, and runtime verification.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

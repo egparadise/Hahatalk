@@ -13,3 +13,5 @@ coverage/
 media-recordings/
 model-weights/
 uploads/
+apps/desktop/runtime/
+apps/desktop/assets/*.ico

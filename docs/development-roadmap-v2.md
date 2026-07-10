@@ -13,7 +13,18 @@ Deliverables:
 
 Exit: participant tests prove no roster, target, delivery, or shared-room leak; harness passes.
 
-## Stage 1 - Durable Identity And Consent
+## Stage 1 - Windows Desktop Runtime
+
+1. Next.js static desktop export and bundled NestJS demo API.
+2. Electron-managed loopback servers and dynamic port handoff.
+3. Single-instance, lifecycle cleanup, navigation limits, and runtime logs.
+4. User-selected Windows screen capture source.
+5. Electron Forge x64 package and Squirrel installer.
+6. Packaged and installed executable smoke tests.
+
+Exit: HahaTalk starts from an installed Windows executable without Node.js or development servers, API/owner/participant checks pass, duplicate startup is rejected, and clean shutdown removes the local runtime.
+
+## Stage 2 - Durable Identity And Consent
 
 1. PostgreSQL migrations and local Docker stack.
 2. Password/passkey or enterprise SSO authentication.
@@ -23,7 +34,7 @@ Exit: participant tests prove no roster, target, delivery, or shared-room leak; 
 
 Exit: a new user accepts an invitation, required approvers consent, the session survives restart, and revoked invitations fail.
 
-## Stage 2 - Conversation Core
+## Stage 3 - Conversation Core
 
 1. Direct chat persistence and cursor history.
 2. Open group membership and shared timeline.
@@ -34,7 +45,7 @@ Exit: a new user accepts an invitation, required approvers consent, the session 
 
 Exit: automated multi-user tests cover success, unauthorized access, manipulated targets, reconnect, and duplicate submission.
 
-## Stage 3 - Contacts, Family, And Managed Groups
+## Stage 4 - Contacts, Family, And Managed Groups
 
 1. Owner-only contact collections.
 2. Shared family/team collections.
@@ -43,7 +54,7 @@ Exit: automated multi-user tests cover success, unauthorized access, manipulated
 
 Exit: private collection names/membership never appear to grouped users unless explicitly shared.
 
-## Stage 4 - Media And Document Desk
+## Stage 5 - Media And Document Desk
 
 1. Signed multipart upload to MinIO/S3.
 2. Virus scan and MIME verification.
@@ -55,7 +66,7 @@ Exit: private collection names/membership never appear to grouped users unless e
 
 Exit: uploads never block text chat; revoked shares disappear; private originals remain owned; date/place filters are indexed.
 
-## Stage 5 - Schedule, Voice, And Video
+## Stage 6 - Schedule, Voice, And Video
 
 1. Event CRUD, recurrence, attendee RSVP, reminders.
 2. LiveKit token service and ad-hoc voice/video calls.
@@ -65,7 +76,7 @@ Exit: uploads never block text chat; revoked shares disappear; private originals
 
 Exit: web, Windows desktop, Android, and iOS capability matrix is tested; unsupported controls are hidden rather than simulated.
 
-## Stage 6 - Personal Broadcast
+## Stage 7 - Personal Broadcast
 
 1. Channel profile and subscription.
 2. Scheduled/live/replay sessions.
@@ -75,7 +86,7 @@ Exit: web, Windows desktop, Android, and iOS capability matrix is tested; unsupp
 
 Exit: viewers cannot publish or see private service chats; host can moderate and end immediately.
 
-## Stage 7 - AI Voice, Summary, And Avatar
+## Stage 8 - AI Voice, Summary, And Avatar
 
 1. Redis-backed AI job state and Python worker protocol.
 2. Silero VAD + faster-whisper STT draft/edit/send.
@@ -86,7 +97,7 @@ Exit: viewers cannot publish or see private service chats; host can moderate and
 
 Exit: AI failure never blocks chat; drafts are labeled; voice-profile use fails closed without current consent.
 
-## Stage 8 - Remote Support
+## Stage 9 - Remote Support
 
 1. Threat model and engine proof of concept.
 2. Signed Windows support agent and device enrollment.
@@ -97,7 +108,7 @@ Exit: AI failure never blocks chat; drafts are labeled; voice-profile use fails 
 
 Exit: control cannot start or resume without a current grant; target user can end immediately; penetration review passes.
 
-## Stage 9 - Mobile Production Clients
+## Stage 10 - Mobile Production Clients
 
 1. Expo/React Native shell and shared contracts.
 2. Notifications, direct/open-group/hub projections, media capture, schedule, and calls.
@@ -106,7 +117,7 @@ Exit: control cannot start or resume without a current grant; target user can en
 
 Exit: Android/iOS tests pass on real devices and capability limitations are explicit.
 
-## Stage 10 - Hardening And Release
+## Stage 11 - Hardening And Release
 
 1. Rate limits, abuse controls, moderation, audit export.
 2. RLS and authorization differential tests.

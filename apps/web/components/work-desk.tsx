@@ -58,7 +58,17 @@ type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
 type AuthMode = "signup" | "login";
 
 const reactions = ["확인", "완료", "질문", "긴급", "감사"];
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:4000";
+type HahaTalkDesktopBridge = {
+  apiBaseUrl?: string;
+  isDesktop: boolean;
+  platform: string;
+  version?: string;
+};
+
+const desktopBridge = typeof window === "undefined"
+  ? undefined
+  : (window as Window & { hahaTalkDesktop?: HahaTalkDesktopBridge }).hahaTalkDesktop;
+const apiBaseUrl = desktopBridge?.apiBaseUrl ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:4000";
 const authSessionStorageKey = "hahatalk.authSession.v1";
 
 export function WorkDesk() {

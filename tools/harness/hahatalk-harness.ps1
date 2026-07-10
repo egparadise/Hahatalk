@@ -50,6 +50,7 @@ function Invoke-CheckedCommand {
 Invoke-CheckedCommand -Command @("npm", "run", "typecheck")
 Invoke-CheckedCommand -Command @("npm", "test")
 Invoke-CheckedCommand -Command @("npm", "run", "schema:check")
+Invoke-CheckedCommand -Command @("npm", "run", "desktop:check")
 Invoke-CheckedCommand -Command @("npm", "run", "build")
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
 

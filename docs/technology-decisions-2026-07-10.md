@@ -76,3 +76,11 @@ Decision: small repo `AGENTS.md` for persistent rules, `.agents/skills` for the 
 
 - Codex recommends `AGENTS.md` for durable repo guidance and `.agents/skills` for repo-scoped workflows: [Codex customization](https://developers.openai.com/codex/concepts/customization).
 - Project hooks can live in `.codex/hooks.json` and run at lifecycle events: [Codex hooks](https://developers.openai.com/codex/config-advanced#hooks).
+
+## Windows Desktop Packaging
+
+- Electron's official distribution guide recommends Electron Forge for packaging and distributables. HahaTalk uses Forge with Squirrel.Windows to produce a per-user installer: [Electron packaging](https://www.electronjs.org/docs/latest/tutorial/tutorial-packaging), [Squirrel.Windows maker](https://www.electronforge.io/config/makers/squirrel.windows).
+- The packaged API runs in Electron `utilityProcess`, which provides a Node child process while preserving process isolation from the renderer: [Electron utilityProcess](https://www.electronjs.org/docs/latest/api/utility-process).
+- Next.js `output: "export"` creates static assets that can be served by the local Electron runtime without a separate Next.js server: [Next.js static exports](https://nextjs.org/docs/app/guides/static-exports).
+- The renderer retains context isolation, sandboxing, disabled Node integration, parsed-origin navigation checks, and explicit display-media permission handling following Electron's [security checklist](https://www.electronjs.org/docs/latest/tutorial/security) and [session API](https://www.electronjs.org/docs/latest/api/session#sessetdisplaymediarequesthandlerhandler-opts).
+- Rejected for this stage: packaging the full monorepo and `node_modules`, because it increases installer size and leaks build-only dependencies. The API is bundled and static assets are copied as explicit runtime resources instead.

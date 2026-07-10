@@ -10,6 +10,9 @@ const requiredFiles = [
   "apps/api/src/modules/demo-store.ts",
   "apps/api/src/modules/chat.gateway.ts",
   "apps/desktop/main.cjs",
+  "apps/desktop/forge.config.cjs",
+  "apps/desktop/scripts/build-runtime.mjs",
+  "apps/desktop/scripts/generate-windows-icon.ps1",
   "packages/contracts/src/index.ts",
   "docs/mvp-architecture.md",
   "docs/schema.sql",
@@ -36,7 +39,11 @@ const requiredTerms = [
   "confirmMessageRead",
   "CreateAttachmentMessageInput",
   "AI 작업",
-  "화면 캡처"
+  "화면 캡처",
+  "utilityProcess.fork",
+  "requestSingleInstanceLock",
+  "setDisplayMediaRequestHandler",
+  "Electron Forge"
 ];
 
 for (const file of requiredFiles) {
@@ -50,6 +57,8 @@ const source = [
   readFileSync(join(root, "apps/api/src/modules/chat.controller.ts"), "utf8"),
   readFileSync(join(root, "apps/api/src/modules/demo-store.ts"), "utf8"),
   readFileSync(join(root, "apps/api/src/modules/chat.gateway.ts"), "utf8"),
+  readFileSync(join(root, "apps/desktop/main.cjs"), "utf8"),
+  readFileSync(join(root, "docs/windows-desktop-runtime.md"), "utf8"),
   readFileSync(join(root, "packages/contracts/src/index.ts"), "utf8"),
   readFileSync(join(root, "docs/mvp-architecture.md"), "utf8"),
   readFileSync(join(root, "docs/schema.sql"), "utf8"),

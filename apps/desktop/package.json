@@ -1,14 +1,23 @@
 {
   "name": "@hahatalk/desktop",
-  "version": "0.1.0",
+  "productName": "HahaTalk",
+  "version": "0.2.1",
   "private": true,
+  "description": "HahaTalk Windows desktop messenger",
+  "author": "Inviz",
   "main": "main.cjs",
   "scripts": {
     "dev": "electron .",
-    "build": "node -c main.cjs && node -c preload.cjs",
-    "typecheck": "node -c main.cjs && node -c preload.cjs"
+    "build": "node -c main.cjs && node -c preload.cjs && node -c forge.config.cjs && node --check scripts/build-runtime.mjs",
+    "runtime:build": "node scripts/build-runtime.mjs",
+    "package": "powershell -ExecutionPolicy Bypass -File scripts/generate-windows-icon.ps1 && electron-forge package --platform win32 --arch x64",
+    "make": "powershell -ExecutionPolicy Bypass -File scripts/generate-windows-icon.ps1 && electron-forge make --platform win32 --arch x64",
+    "typecheck": "node -c main.cjs && node -c preload.cjs && node -c forge.config.cjs && node --check scripts/build-runtime.mjs"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
+    "esbuild": "^0.28.1",
     "electron": "^43.1.0"
   }
 }
