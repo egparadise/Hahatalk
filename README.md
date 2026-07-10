@@ -4,14 +4,14 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 
 ## What Runs Today
 
-- Signup/onboarding mock flow with character selection.
-- API-backed signup/login session flow for the first PC work desk entry.
-- Viewer-specific hub snapshot, `POST /messages`, and approval-aware `POST /invites` flow.
+- PostgreSQL-backed signup/login with Argon2id passwords and character selection.
+- Opaque HttpOnly cookie sessions whose SHA-256 digests, expiry, revocation, and audit events persist across API restarts.
+- Authenticated hub snapshot, `POST /messages`, and approval-aware `POST /invites` flow; client-supplied viewer/sender IDs are ignored.
 - API-backed attachment metadata for files, photos, PDFs, videos, and screen captures.
 - API-backed confirmation action for important read-report messages.
 - Hub owner chat with `All`, `Selected`, and `Private` audience modes.
 - Participant-safe projection that presents the same hub as a normal 1:1 owner conversation.
-- Per-recipient `message_deliveries` and user-specific Socket.IO channels that prevent hub roster/message leakage.
+- Per-recipient `message_deliveries` and authenticated user-specific Socket.IO channels that prevent hub roster/message leakage.
 - Internal and guest invite affordances with guest-safe permission labels.
 - File/photo/PDF/video metadata previews.
 - Screen capture share flow for PC browsers/desktops that support `getDisplayMedia`.
@@ -25,6 +25,9 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 
 ```powershell
 npm install
+npm run infra:up
+# Windows fallback when Docker/WSL is unavailable:
+npm run infra:postgres:portable
 npm run dev:web
 npm run dev:api
 npm run dev:desktop
@@ -36,10 +39,11 @@ npm run typecheck
 npm run build
 npm run smoke
 npm run schema:check
+npm run auth:integration
 npm run harness
 ```
 
-The web MVP runs at `http://127.0.0.1:3000`.
+The web MVP runs at `http://127.0.0.1:3000`. The API now fails closed when PostgreSQL is unavailable. `npm run infra:up` starts the shared PostgreSQL/Redis/object-storage development stack; the portable command starts only PostgreSQL 18.4 under `%LOCALAPPDATA%\HahaTalkDev` for Windows machines whose Docker WSL engine is unavailable.
 
 The Windows installer is generated at `apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe`. It is currently unsigned and intended for local development validation until a Windows code-signing certificate is configured.
 
@@ -71,4 +75,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/development-roadmap-v2.md`: staged path through production release.
 - `docs/security-threat-model.md`: privacy boundaries and mandatory leakage tests.
 - `docs/windows-desktop-runtime.md`: packaged Windows startup, security, build, and runtime verification.
+- `docs/stage-2-auth-persistence.md`: Stage 2A database, password, cookie, migration, and restart-test contract.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

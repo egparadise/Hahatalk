@@ -12,7 +12,8 @@ const requiredFiles = [
   "apps/desktop/preload.cjs",
   "apps/desktop/scripts/build-runtime.mjs",
   "apps/desktop/scripts/generate-windows-icon.ps1",
-  "tools/harness/windows-package-smoke.ps1"
+  "tools/harness/windows-package-smoke.ps1",
+  "tools/harness/windows-renderer-auth-smoke.mjs"
 ];
 
 for (const relativePath of requiredFiles) {
@@ -37,6 +38,8 @@ const assertions = [
   [mainSource.includes("will-navigate"), "navigation restriction is required"],
   [mainSource.includes("runtime-status.json"), "packaged runtime status evidence is required"],
   [mainSource.includes("rendererApiHealthy"), "renderer-to-API bridge verification is required"],
+  [mainSource.includes("HAHATALK_MIGRATIONS_DIR"), "packaged API migrations path is required"],
+  [mainSource.includes("hahatalk_desktop_session"), "desktop cookie namespace is required"],
   [preloadSource.includes("hahatalk-api-url"), "preload must expose the runtime API URL"],
   [preloadSource.includes("contextBridge"), "preload must use contextBridge"]
 ];
@@ -49,6 +52,8 @@ if (requireRuntime) {
   const runtimeFiles = [
     path.join(desktopRoot, "runtime", "api.cjs"),
     path.join(desktopRoot, "runtime", "runtime-manifest.json"),
+    path.join(desktopRoot, "runtime", "migrations", "001_auth_foundation.sql"),
+    path.join(desktopRoot, "runtime", "node_modules", "argon2", "argon2.cjs"),
     path.join(desktopRoot, "runtime", "web", "index.html")
   ];
   for (const filePath of runtimeFiles) await access(filePath);

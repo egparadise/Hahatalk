@@ -2,7 +2,7 @@
 
 ## Goal
 
-HahaTalk must start from an installed Windows executable without requiring Node.js, npm, a terminal, the source repository, or separately started web/API development servers.
+HahaTalk must start from an installed Windows executable without requiring Node.js, npm, the source repository, or separately started web/API development servers. The Stage 2 development package requires a reachable PostgreSQL service; production distribution will point the desktop client at the managed HahaTalk backend rather than installing a database on every user PC.
 
 ## Runtime Layout
 
@@ -14,7 +14,7 @@ HahaTalk.exe
  -> sandboxed renderer with context-isolated preload bridge
 ```
 
-The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJS API is bundled from TypeScript output so decorator metadata remains intact. Generated assets are copied to `resources/runtime` outside `app.asar`; source code and development dependencies are not copied.
+The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJS API is bundled from TypeScript output so decorator metadata remains intact. Generated assets, immutable SQL migrations, and the Windows Argon2 native runtime are copied to `resources/runtime` outside `app.asar`; source code and unrelated development dependencies are not copied.
 
 ## Startup Sequence
 
@@ -22,7 +22,7 @@ The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJ
 2. Acquire the single-instance lock.
 3. Start the static server on `127.0.0.1` with an operating-system-assigned port.
 4. Start the API in `utilityProcess` with a separate available loopback port.
-5. Poll `/health`; retry API startup once on failure.
+5. Apply checksum-verified PostgreSQL migrations, then poll `/health`; retry API startup once on failure.
 6. Pass the resolved API URL to the renderer through `additionalArguments` and `contextBridge`.
 7. Write `%APPDATA%/HahaTalk/runtime-status.json` as runtime verification evidence.
 8. Verify from the renderer that the preload-provided API URL answers `/health`.
@@ -37,6 +37,7 @@ The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJ
 - Camera, microphone, fullscreen, and display capture permissions are limited to runtime origins.
 - Screen capture requires a user gesture and a local source-selection dialog.
 - The API is isolated from the renderer in Electron `utilityProcess`.
+- The renderer receives only an opaque HttpOnly cookie; authentication responses and preload APIs never expose the session token.
 
 ## Build Commands
 
@@ -60,8 +61,8 @@ apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe
 - packaged executable starts with ports 3000 and 4000 closed
 - status file reports `packaged: true`
 - status file reports `rendererReady: true` and `rendererApiHealthy: true`
-- API `/health` succeeds
-- owner projection returns four demo users and participant projection returns only two
+- API `/health` proves PostgreSQL connectivity
+- authenticated owner projection returns four demo users and authenticated participant projection returns only two even with a forged `viewerId`
 - second executable invocation exits and leaves one main window
 - normal window close removes the status file and closes the API port
 - installed executable runs from `%LOCALAPPDATA%/HahaTalk/app-<version>`
@@ -70,7 +71,8 @@ apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe
 ## Release Limitations
 
 - The current installer is unsigned. Windows code signing is required before external distribution to avoid trust warnings and to support a production update channel.
-- The API remains an in-memory MVP and loses demo mutations on restart.
+- Accounts, Argon2id password hashes, sessions, revocation, and auth audit events persist in PostgreSQL. Conversation, invitation, and attachment mutations remain in-memory until Stage 3.
+- The Stage 2 development installer needs local PostgreSQL on port 54329. This is a development topology, not the production end-user architecture.
 - The installer currently targets Windows x64. ARM64 is a later build target.
 - Screen capture uses a name-based local selector; thumbnail selection and per-window consent history can be improved later.
 

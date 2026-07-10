@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   buildReadReport,
-  createAuthSession,
   createMessageAudience,
   createMessageDeliveryPlan,
   demoAiJobs,
@@ -10,7 +9,6 @@ import {
   demoRoom,
   demoRoomMembers,
   demoUsers,
-  findCharacterPreset,
   createDemoStorageKey,
   confirmMessageRead,
   getMessageTypeForMime,
@@ -18,10 +16,9 @@ import {
   isValidEmail,
   normalizeEmail,
   projectMessageForViewer,
-  type AuthSession,
   type ConfirmMessageReadInput,
   type ConversationView,
-  type LoginInput,
+  type MemberRole,
   type Message,
   type MvpSnapshot,
   type RoomMember,
@@ -29,7 +26,6 @@ import {
   type CreateAttachmentMessageInput,
   type Invite,
   type SendMessageInput,
-  type SignupInput,
   type User
 } from "@hahatalk/contracts";
 
@@ -39,7 +35,32 @@ export class DemoStore {
   private readonly roomMembers: RoomMember[] = [...demoRoomMembers];
   private readonly messages: Message[] = [...demoMessages];
   private readonly invites: Invite[] = [];
-  private readonly sessions: AuthSession[] = [];
+
+  ensureUser(user: User, role: MemberRole) {
+    const userIndex = this.users.findIndex((candidate) => candidate.id === user.id);
+    if (userIndex >= 0) {
+      this.users[userIndex] = user;
+    } else {
+      this.users.push(user);
+    }
+
+    const membershipIndex = this.roomMembers.findIndex(
+      (membership) => membership.roomId === demoRoom.id && membership.userId === user.id
+    );
+    const currentMembership = membershipIndex >= 0 ? this.roomMembers[membershipIndex] : undefined;
+    const membership: RoomMember = {
+      joinedAt: currentMembership?.joinedAt ?? new Date().toISOString(),
+      role,
+      roomId: demoRoom.id,
+      userId: user.id,
+      viewMode: user.id === demoRoom.ownerId ? "owner_console" : "direct_with_owner"
+    };
+    if (membershipIndex >= 0) {
+      this.roomMembers[membershipIndex] = { ...currentMembership!, ...membership };
+    } else {
+      this.roomMembers.push(membership);
+    }
+  }
 
   snapshot(viewerId = demoRoom.ownerId): MvpSnapshot {
     const view = this.conversationView(viewerId);
@@ -74,54 +95,6 @@ export class DemoStore {
       roomMembers: this.roomMembers.filter((member) => visibleMemberIds.has(member.userId)),
       messages
     };
-  }
-
-  signup(input: SignupInput) {
-    const displayName = input.displayName.trim();
-    const email = normalizeEmail(input.email);
-
-    if (displayName.length < 2) {
-      throw new BadRequestException("displayName must be at least 2 characters.");
-    }
-
-    if (!isValidEmail(email)) {
-      throw new BadRequestException("email must be valid.");
-    }
-
-    const currentUser = this.users[0]!;
-    const user: User = {
-      ...currentUser,
-      displayName,
-      email,
-      status: "active",
-      character: findCharacterPreset(input.characterId),
-      lastSeenAt: new Date().toISOString()
-    };
-
-    this.users[0] = user;
-    const session = createAuthSession(user, this.getMemberRole(user.id), demoRoom.id, undefined, demoRoom);
-    this.sessions.push(session);
-
-    return session;
-  }
-
-  login(input: LoginInput) {
-    const email = normalizeEmail(input.email);
-
-    if (!isValidEmail(email)) {
-      throw new BadRequestException("email must be valid.");
-    }
-
-    const user = this.users.find((candidate) => normalizeEmail(candidate.email) === email);
-
-    if (!user) {
-      throw new NotFoundException("No HahaTalk user exists for this email.");
-    }
-
-    const session = createAuthSession(user, this.getMemberRole(user.id), demoRoom.id, undefined, demoRoom);
-    this.sessions.push(session);
-
-    return session;
   }
 
   sendMessage(input: SendMessageInput) {
@@ -305,9 +278,5 @@ export class DemoStore {
     }
 
     return projectMessageForViewer(message, demoRoom, this.roomMembers, viewerId);
-  }
-
-  private getMemberRole(userId: string) {
-    return this.roomMembers.find((member) => member.userId === userId)?.role ?? "member";
   }
 }

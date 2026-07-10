@@ -26,11 +26,21 @@ Exit: HahaTalk starts from an installed Windows executable without Node.js or de
 
 ## Stage 2 - Durable Identity And Consent
 
-1. PostgreSQL migrations and local Docker stack.
-2. Password/passkey or enterprise SSO authentication.
-3. Session rotation, device list, logout/revoke.
-4. Invitations and owner/admin/all-member/quorum approval workflow.
-5. Consent center and append-only audit log.
+### Stage 2A - Persisted Authentication Foundation
+
+1. PostgreSQL 18 migration runner with checksum and advisory lock. Complete.
+2. Docker Compose stack plus a verified Windows portable-PostgreSQL fallback. Complete.
+3. Argon2id password claim/signup/login and generic login failure. Complete.
+4. Opaque HttpOnly cookie, hashed server session, absolute/idle expiry, `/auth/me`, and logout revocation. Complete.
+5. Exact Origin/custom-header policy and authenticated HTTP/Socket.IO identity projection. Complete.
+6. Restart, logout, raw-token-storage, and viewer/sender spoof differential harness. Complete.
+
+### Stage 2B - Invitations, Devices, And Consent
+
+1. Invitation/email verification and owner/admin/all-member/quorum approval workflow.
+2. Session rotation, device list, revoke-all, and Redis-backed login throttling.
+3. Passkey and enterprise SSO adapters.
+4. Consent center and append-only policy-versioned audit history.
 
 Exit: a new user accepts an invitation, required approvers consent, the session survives restart, and revoked invitations fail.
 

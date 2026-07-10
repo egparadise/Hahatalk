@@ -25,6 +25,11 @@
 | Threat | Required control |
 | --- | --- |
 | Hub participant enumerates others | Viewer projections, no shared roster/presence channel, delivery-based reads, differential leakage tests |
+| Client chooses another identity | HttpOnly opaque session, server-side token digest lookup, authenticated principal injected by a global guard |
+| Database reader reuses a session | Store only a SHA-256 digest of a 256-bit random cookie token; revoke and expire server-side |
+| XSS reads a login token | Never expose the session in JSON or web storage; use an HttpOnly/SameSite cookie |
+| Cross-site request uses ambient cookie | Exact Origin allowlist, required custom header, strict CORS credentials, and SameSite=Strict |
+| Password database is stolen | Argon2id with OWASP baseline memory/time parameters and per-hash salt |
 | Manipulated client targets another participant | Resolve deliveries server-side; non-owner hub messages normalize to owner only |
 | Shared socket leaks full message | User-specific authenticated channels and per-viewer projection |
 | Duplicate message/upload/job | Idempotency key and unique constraint |
@@ -45,3 +50,5 @@
 - Confirm logs and analytics omit recipient lists for participant requests.
 - Confirm read-report endpoints return aggregate data only to an authorized owner/admin.
 - Confirm Socket.IO emissions target user channels and never a shared hub channel.
+- Confirm `viewerId`, `senderId`, `uploaderId`, `invitedBy`, and read-confirm user IDs from a client cannot replace the authenticated principal.
+- Confirm session cookies contain `HttpOnly` and `SameSite=Strict`, API JSON contains no token, and PostgreSQL contains only a 32-byte digest.

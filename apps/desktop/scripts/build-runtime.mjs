@@ -10,6 +10,7 @@ const desktopRoot = path.resolve(scriptDirectory, "..");
 const repoRoot = path.resolve(desktopRoot, "..", "..");
 const runtimeRoot = path.join(desktopRoot, "runtime");
 const webRuntimeRoot = path.join(runtimeRoot, "web");
+const runtimeNodeModulesRoot = path.join(runtimeRoot, "node_modules");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 function runNpm(args) {
@@ -43,7 +44,7 @@ const bundledApi = path.join(runtimeRoot, "api.cjs");
 await build({
   bundle: true,
   entryPoints: [apiEntry],
-  external: ["@nestjs/microservices", "@nestjs/microservices/*"],
+  external: ["@nestjs/microservices", "@nestjs/microservices/*", "argon2"],
   format: "cjs",
   logLevel: "warning",
   outfile: bundledApi,
@@ -53,13 +54,26 @@ await build({
 });
 
 await cp(path.join(repoRoot, "apps", "web", "out"), webRuntimeRoot, { recursive: true });
+await cp(path.join(repoRoot, "apps", "api", "migrations"), path.join(runtimeRoot, "migrations"), { recursive: true });
+await cp(path.join(repoRoot, "node_modules", "argon2"), path.join(runtimeNodeModulesRoot, "argon2"), { recursive: true });
+await cp(
+  path.join(repoRoot, "node_modules", "@phc", "format"),
+  path.join(runtimeNodeModulesRoot, "@phc", "format"),
+  { recursive: true }
+);
+await cp(
+  path.join(repoRoot, "node_modules", "node-gyp-build"),
+  path.join(runtimeNodeModulesRoot, "node-gyp-build"),
+  { recursive: true }
+);
 
 const indexPath = path.join(webRuntimeRoot, "index.html");
 const manifest = {
   apiSha256: await sha256(bundledApi),
   generatedAt: new Date().toISOString(),
   indexSha256: await sha256(indexPath),
-  runtimeVersion: 1
+  migrationSha256: await sha256(path.join(runtimeRoot, "migrations", "001_auth_foundation.sql")),
+  runtimeVersion: 2
 };
 await writeFile(path.join(runtimeRoot, "runtime-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 

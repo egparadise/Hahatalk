@@ -1,6 +1,6 @@
 -- HahaTalk PostgreSQL V2 domain schema.
 -- PostgreSQL stores identity, consent, conversation, delivery, media metadata,
--- schedules, AI jobs, and audit state. S3/MinIO stores binary objects.
+-- schedules, AI jobs, and audit state. An S3-compatible provider stores binary objects.
 
 create extension if not exists pgcrypto;
 create extension if not exists citext;
@@ -15,6 +15,7 @@ create table organizations (
 
 create table users (
   id uuid primary key default gen_random_uuid(),
+  public_id text not null unique,
   email citext not null unique,
   phone text unique,
   password_hash text,
@@ -22,6 +23,9 @@ create table users (
   status text not null check (status in ('invited', 'active', 'suspended', 'deleted')),
   locale text not null default 'ko-KR',
   timezone text not null default 'Asia/Seoul',
+  auth_version integer not null default 1 check (auth_version > 0),
+  account_claimed_at timestamptz,
+  password_changed_at timestamptz,
   last_seen_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -47,6 +51,30 @@ create table profiles (
   public_profile_json jsonb not null default '{}',
   updated_at timestamptz not null default now()
 );
+
+-- Browser/Desktop clients hold only the opaque cookie token. PostgreSQL stores
+-- its SHA-256 digest so a database read does not disclose a reusable session.
+create table web_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  token_hash bytea not null unique,
+  session_auth_version integer not null check (session_auth_version > 0),
+  user_agent text,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  idle_expires_at timestamptz not null,
+  expires_at timestamptz not null,
+  revoked_at timestamptz,
+  revoke_reason text,
+  check (idle_expires_at <= expires_at)
+);
+
+create index web_sessions_active_user_idx
+  on web_sessions(user_id, expires_at desc)
+  where revoked_at is null;
+create index web_sessions_expiry_idx
+  on web_sessions(expires_at)
+  where revoked_at is null;
 
 create table consent_records (
   id uuid primary key default gen_random_uuid(),

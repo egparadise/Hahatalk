@@ -52,6 +52,7 @@ Invoke-CheckedCommand -Command @("npm", "test")
 Invoke-CheckedCommand -Command @("npm", "run", "schema:check")
 Invoke-CheckedCommand -Command @("npm", "run", "desktop:check")
 Invoke-CheckedCommand -Command @("npm", "run", "build")
+Invoke-CheckedCommand -Command @("npm", "run", "auth:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
 
 $verificationDir = Join-Path $root "node_modules\.cache"

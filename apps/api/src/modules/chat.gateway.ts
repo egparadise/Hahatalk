@@ -2,24 +2,22 @@ import { Inject, Logger } from "@nestjs/common";
 import {
   ConnectedSocket,
   MessageBody,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
 import { type AudienceType } from "@hahatalk/contracts";
+import { AuthService } from "../auth/auth.service.js";
+import type { AuthPrincipal } from "../auth/auth.types.js";
 import { DemoStore } from "./demo-store.js";
 
 interface SendMessageEvent {
-  senderId: string;
   body: string;
   audienceType: AudienceType;
   targetUserIds: string[];
   requiresConfirmation?: boolean;
-}
-
-interface JoinRoomEvent {
-  userId: string;
 }
 
 @WebSocketGateway({
@@ -28,17 +26,38 @@ interface JoinRoomEvent {
     credentials: true
   }
 })
-export class ChatGateway {
+export class ChatGateway implements OnGatewayInit {
   @WebSocketServer()
   server!: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
 
-  constructor(@Inject(DemoStore) private readonly store: DemoStore) {}
+  constructor(
+    @Inject(DemoStore) private readonly store: DemoStore,
+    private readonly authService: AuthService
+  ) {}
+
+  afterInit(server: Server) {
+    server.use(async (socket, next) => {
+      try {
+        const principal = await this.authService.authenticateCookieHeader(socket.handshake.headers.cookie);
+        if (!principal) {
+          next(new Error("Authentication required."));
+          return;
+        }
+        socket.data.auth = principal;
+        next();
+      } catch {
+        next(new Error("Authentication required."));
+      }
+    });
+  }
 
   @SubscribeMessage("room:join")
-  joinRoom(@ConnectedSocket() socket: Socket, @MessageBody() body: JoinRoomEvent) {
-    const userId = body.userId;
+  joinRoom(@ConnectedSocket() socket: Socket) {
+    const principal = this.principal(socket);
+    const userId = principal.state.user.id;
+    this.store.ensureUser(principal.state.user, principal.state.role);
     const userRoom = this.userRoom(userId);
     const snapshot = this.store.snapshot(userId);
 
@@ -49,8 +68,11 @@ export class ChatGateway {
   }
 
   @SubscribeMessage("message:send")
-  sendMessage(@MessageBody() body: SendMessageEvent) {
-    const message = this.store.sendMessage(body);
+  sendMessage(@ConnectedSocket() socket: Socket, @MessageBody() body: SendMessageEvent) {
+    const principal = this.principal(socket);
+    const senderId = principal.state.user.id;
+    this.store.ensureUser(principal.state.user, principal.state.role);
+    const message = this.store.sendMessage({ ...body, senderId });
 
     for (const delivery of message.deliveries) {
       const projectedMessage = this.store.messageForViewer(message.id, delivery.recipientId);
@@ -60,7 +82,15 @@ export class ChatGateway {
       }
     }
 
-    return this.store.messageForViewer(message.id, body.senderId);
+    return this.store.messageForViewer(message.id, senderId);
+  }
+
+  private principal(socket: Socket) {
+    const principal = socket.data.auth as AuthPrincipal | undefined;
+    if (!principal) {
+      throw new Error("Authentication required.");
+    }
+    return principal;
   }
 
   private userRoom(userId: string) {

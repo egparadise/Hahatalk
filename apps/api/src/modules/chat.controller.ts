@@ -1,20 +1,19 @@
-import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Inject, Param, Post } from "@nestjs/common";
 import {
   type ApprovalPolicy,
   type AudienceType,
-  type ConfirmMessageReadInput,
   type CreateAttachmentMessageInput,
   type CreateInviteInput,
   type MemberRole,
   type SendMessageInput
 } from "@hahatalk/contracts";
 import { IsArray, IsBoolean, IsEmail, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from "class-validator";
+import { CurrentAuth, PublicRoute } from "../auth/auth.decorators.js";
+import type { AuthPrincipal } from "../auth/auth.types.js";
+import { DatabaseService } from "../database/database.service.js";
 import { DemoStore } from "./demo-store.js";
 
 class SendMessageDto {
-  @IsString()
-  senderId = "user-you";
-
   @IsString()
   @MinLength(1)
   body = "";
@@ -41,18 +40,12 @@ class CreateInviteDto {
   @IsIn(["member", "guest"])
   role: "member" | "guest" = "guest";
 
-  @IsString()
-  invitedBy = "user-you";
-
   @IsOptional()
   @IsIn(["owner_and_invitee", "admins_and_invitee", "all_members_and_invitee", "quorum_and_invitee"])
   approvalPolicy?: ApprovalPolicy;
 }
 
 class CreateAttachmentMessageDto {
-  @IsString()
-  uploaderId = "user-you";
-
   @IsString()
   @MinLength(1)
   fileName = "";
@@ -83,39 +76,18 @@ class CreateAttachmentMessageDto {
   mediaVisibility?: "private_archive" | "shared" | "selected";
 }
 
-class SignupDto {
-  @IsString()
-  @MinLength(2)
-  displayName = "";
-
-  @IsEmail()
-  email = "";
-
-  @IsString()
-  characterId = "char-calm-lead";
-
-  @IsOptional()
-  @IsString()
-  inviteCode?: string;
-}
-
-class LoginDto {
-  @IsEmail()
-  email = "";
-}
-
-class ConfirmMessageReadDto {
-  @IsString()
-  userId = "user-you";
-}
-
 @Controller()
 export class ChatController {
-  constructor(@Inject(DemoStore) private readonly store: DemoStore) {}
+  constructor(
+    @Inject(DemoStore) private readonly store: DemoStore,
+    private readonly database: DatabaseService
+  ) {}
 
+  @PublicRoute()
   @Get("health")
-  health() {
+  async health() {
     return {
+      database: await this.database.health(),
       ok: true,
       service: "hahatalk-api",
       timestamp: new Date().toISOString()
@@ -123,47 +95,58 @@ export class ChatController {
   }
 
   @Get("mvp")
-  mvpSnapshot(@Query("viewerId") viewerId?: string) {
-    return this.store.snapshot(viewerId || "user-you");
+  mvpSnapshot(@CurrentAuth() principal: AuthPrincipal) {
+    const viewerId = this.ensureViewer(principal);
+    return this.store.snapshot(viewerId);
   }
 
   @Get("spaces/:spaceId/view")
-  conversationView(@Param("spaceId") spaceId: string, @Query("viewerId") viewerId?: string) {
-    return this.store.conversationView(viewerId || "user-you", spaceId);
-  }
-
-  @Post("auth/signup")
-  signup(@Body() body: SignupDto) {
-    return this.store.signup(body);
-  }
-
-  @Post("auth/login")
-  login(@Body() body: LoginDto) {
-    return this.store.login(body);
+  conversationView(@Param("spaceId") spaceId: string, @CurrentAuth() principal: AuthPrincipal) {
+    const viewerId = this.ensureViewer(principal);
+    return this.store.conversationView(viewerId, spaceId);
   }
 
   @Post("messages")
-  sendMessage(@Body() body: SendMessageDto) {
-    return this.store.sendMessage(body as SendMessageInput);
+  sendMessage(@Body() body: SendMessageDto, @CurrentAuth() principal: AuthPrincipal) {
+    const senderId = this.ensureViewer(principal);
+    return this.store.sendMessage({ ...body, senderId } as SendMessageInput);
   }
 
   @Get("messages/:messageId/read-report")
-  readReport(@Param("messageId") messageId: string, @Query("viewerId") viewerId?: string) {
-    return this.store.readReport(messageId, viewerId || "user-you");
+  readReport(@Param("messageId") messageId: string, @CurrentAuth() principal: AuthPrincipal) {
+    if (!principal.state.permissions.canOpenReadReport) {
+      throw new ForbiddenException("Read report permission is required.");
+    }
+    const viewerId = this.ensureViewer(principal);
+    return this.store.readReport(messageId, viewerId);
   }
 
   @Post("messages/:messageId/confirm")
-  confirmRead(@Param("messageId") messageId: string, @Body() body: ConfirmMessageReadDto) {
-    return this.store.confirmRead(messageId, body as ConfirmMessageReadInput);
+  confirmRead(@Param("messageId") messageId: string, @CurrentAuth() principal: AuthPrincipal) {
+    const userId = this.ensureViewer(principal);
+    return this.store.confirmRead(messageId, { userId });
   }
 
   @Post("invites")
-  createInvite(@Body() body: CreateInviteDto) {
-    return this.store.createInvite(body as CreateInviteInput);
+  createInvite(@Body() body: CreateInviteDto, @CurrentAuth() principal: AuthPrincipal) {
+    if (!principal.state.permissions.canInviteGuests) {
+      throw new ForbiddenException("Guest invitation permission is required.");
+    }
+    const invitedBy = this.ensureViewer(principal);
+    return this.store.createInvite({ ...body, invitedBy } as CreateInviteInput);
   }
 
   @Post("attachments")
-  createAttachmentMessage(@Body() body: CreateAttachmentMessageDto) {
-    return this.store.createAttachmentMessage(body as CreateAttachmentMessageInput);
+  createAttachmentMessage(@Body() body: CreateAttachmentMessageDto, @CurrentAuth() principal: AuthPrincipal) {
+    if (!principal.state.permissions.canUploadFiles) {
+      throw new ForbiddenException("File upload permission is required.");
+    }
+    const uploaderId = this.ensureViewer(principal);
+    return this.store.createAttachmentMessage({ ...body, uploaderId } as CreateAttachmentMessageInput);
+  }
+
+  private ensureViewer(principal: AuthPrincipal) {
+    this.store.ensureUser(principal.state.user, principal.state.role);
+    return principal.state.user.id;
   }
 }

@@ -253,8 +253,10 @@ async function startPackagedApi(apiEntryPath, webOrigin) {
     const apiProcess = utilityProcess.fork(apiEntryPath, [], {
       env: {
         ...process.env,
+        HAHATALK_MIGRATIONS_DIR: path.join(path.dirname(apiEntryPath), "migrations"),
         NODE_ENV: "production",
         PORT: String(port),
+        SESSION_COOKIE_NAME: "hahatalk_desktop_session",
         WEB_ORIGIN: webOrigin
       },
       serviceName: "HahaTalk API",

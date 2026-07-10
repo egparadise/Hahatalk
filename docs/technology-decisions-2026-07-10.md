@@ -70,6 +70,20 @@ Decision: PostgreSQL with application authorization plus row-level-security test
 
 The client never queries canonical hub rows directly. The API returns a viewer projection, and tests verify that member count, other deliveries, and target metadata are absent.
 
+## Authentication And Sessions
+
+Decision: Argon2id passwords and opaque stateful sessions, not bearer tokens in browser storage.
+
+- OWASP recommends Argon2id and provides a 19 MiB/two-iteration/one-lane baseline used by Stage 2A: [OWASP password storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
+- OWASP warns against authentication tokens in web storage. HahaTalk returns no token field, stores the cookie as HttpOnly/SameSite=Strict, and stores only its SHA-256 digest in PostgreSQL: [OWASP session management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
+- Unsafe browser requests require an exact Origin and a custom header in addition to SameSite and strict credentialed CORS: [OWASP CSRF prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
+
+## Object Storage Update
+
+Decision: keep the application API S3-compatible and treat the pinned MinIO container as local-development-only.
+
+The MinIO community repository was archived in April 2026 and now describes community distribution as source-only. A frozen binary must not become HahaTalk's production storage dependency: [MinIO repository](https://github.com/minio/minio). Stage 5 will compare active S3-compatible projects and managed S3 using compatibility, security maintenance, license, recovery, and operational evidence before selecting the production provider.
+
 ## Codex Development System
 
 Decision: small repo `AGENTS.md` for persistent rules, `.agents/skills` for the reusable stage loop, `.codex/agents` for specialist roles, and `.codex/hooks.json` for lifecycle reminders.

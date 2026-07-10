@@ -142,7 +142,8 @@ describe("HahaTalk conversation contracts", () => {
     );
 
     expect(memberSession.permissions.canInviteGuests).toBe(true);
-    expect(memberSession.expiresAt).toBe("2026-07-09T09:00:00.000Z");
+    expect(memberSession.expiresAt).toBe("2026-07-09T13:00:00.000Z");
+    expect(memberSession).not.toHaveProperty("token");
     expect(guestSession.permissions.canDownloadFiles).toBe(false);
     expect(guestSession.permissions.canOpenReadReport).toBe(false);
     expect(hiddenHubAdminSession.permissions.canInviteGuests).toBe(false);

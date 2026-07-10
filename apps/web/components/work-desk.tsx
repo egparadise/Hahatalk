@@ -69,29 +69,40 @@ const desktopBridge = typeof window === "undefined"
   ? undefined
   : (window as Window & { hahaTalkDesktop?: HahaTalkDesktopBridge }).hahaTalkDesktop;
 const apiBaseUrl = desktopBridge?.apiBaseUrl ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:4000";
-const authSessionStorageKey = "hahatalk.authSession.v1";
 
 export function WorkDesk() {
   const [authMode, setAuthMode] = useState<AuthMode>("signup");
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  const [isRestoringAuth, setIsRestoringAuth] = useState(true);
   const [authError, setAuthError] = useState("");
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
   const [displayName, setDisplayName] = useState("이과장");
   const [email, setEmail] = useState("you@inviz.co.kr");
+  const [password, setPassword] = useState("");
   const [selectedCharacterId, setSelectedCharacterId] = useState(characterPresets[0]?.id ?? "");
   const selectedCharacter = characterPresets.find((character) => character.id === selectedCharacterId) ?? characterPresets[0]!;
 
   useEffect(() => {
-    const storedSession = readStoredSession();
-
-    if (!storedSession) {
-      return;
-    }
-
-    setAuthSession(storedSession);
-    setDisplayName(storedSession.user.displayName);
-    setEmail(storedSession.user.email);
-    setSelectedCharacterId(storedSession.user.character.id);
+    let active = true;
+    void getJson<AuthSession>("/auth/me")
+      .then((session) => {
+        if (!active) {
+          return;
+        }
+        setAuthSession(session);
+        setDisplayName(session.user.displayName);
+        setEmail(session.user.email);
+        setSelectedCharacterId(session.user.character.id);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) {
+          setIsRestoringAuth(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const draftUser: User = {
@@ -111,15 +122,15 @@ export function WorkDesk() {
       const session = await postJson<AuthSession>(
         authMode === "signup" ? "/auth/signup" : "/auth/login",
         authMode === "signup"
-          ? { displayName, email, characterId: selectedCharacterId }
-          : { email }
+          ? { displayName, email, password, characterId: selectedCharacterId }
+          : { email, password }
       );
 
       setAuthSession(session);
       setDisplayName(session.user.displayName);
       setEmail(session.user.email);
       setSelectedCharacterId(session.user.character.id);
-      window.localStorage.setItem(authSessionStorageKey, JSON.stringify(session));
+      setPassword("");
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "가입/로그인 처리 중 오류가 발생했습니다.");
     } finally {
@@ -127,10 +138,18 @@ export function WorkDesk() {
     }
   }
 
-  function logout() {
-    window.localStorage.removeItem(authSessionStorageKey);
+  async function logout() {
+    try {
+      await postJson<{ ok: boolean }>("/auth/logout", {});
+    } catch {
+      // The local authenticated view still closes if the API is already unavailable.
+    }
     setAuthSession(null);
     setAuthMode("login");
+  }
+
+  if (isRestoringAuth) {
+    return <main className="auth-shell" aria-busy="true" />;
   }
 
   if (!authSession) {
@@ -139,12 +158,14 @@ export function WorkDesk() {
         authMode={authMode}
         displayName={displayName}
         email={email}
+        password={password}
         error={authError}
         isSubmitting={isSubmittingAuth}
         selectedCharacterId={selectedCharacterId}
         onAuthModeChange={setAuthMode}
         onDisplayNameChange={setDisplayName}
         onEmailChange={setEmail}
+        onPasswordChange={setPassword}
         onCharacterChange={setSelectedCharacterId}
         onSubmit={submitAuth}
       />
@@ -158,24 +179,28 @@ function SignupFlow({
   authMode,
   displayName,
   email,
+  password,
   error,
   isSubmitting,
   selectedCharacterId,
   onAuthModeChange,
   onDisplayNameChange,
   onEmailChange,
+  onPasswordChange,
   onCharacterChange,
   onSubmit
 }: {
   authMode: AuthMode;
   displayName: string;
   email: string;
+  password: string;
   error: string;
   isSubmitting: boolean;
   selectedCharacterId: string;
   onAuthModeChange: (value: AuthMode) => void;
   onDisplayNameChange: (value: string) => void;
   onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
   onCharacterChange: (value: string) => void;
   onSubmit: () => Promise<void>;
 }) {
@@ -190,7 +215,7 @@ function SignupFlow({
         <div className="brand-mark">인</div>
         <h1>{authMode === "signup" ? "HahaTalk 가입" : "HahaTalk 로그인"}</h1>
         <p className="auth-copy">
-          {authMode === "signup" ? "업무 프로필과 캐릭터를 정하고 바로 허브 대화에 입장합니다." : "업무 이메일로 내 세션을 다시 엽니다."}
+          {authMode === "signup" ? "업무 프로필과 캐릭터를 정하고 바로 허브 대화에 입장합니다." : "업무 이메일과 비밀번호로 내 세션을 다시 엽니다."}
         </p>
         <div className="auth-mode-tabs" aria-label="인증 모드">
           <button className="chip-button" data-active={authMode === "signup"} onClick={() => onAuthModeChange("signup")} type="button">
@@ -210,6 +235,19 @@ function SignupFlow({
           <label className="field">
             업무 이메일
             <input className="text-input" required type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} />
+          </label>
+          <label className="field">
+            비밀번호
+            <input
+              autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+              className="text-input"
+              maxLength={128}
+              minLength={authMode === "signup" ? 12 : 1}
+              required
+              type="password"
+              value={password}
+              onChange={(event) => onPasswordChange(event.target.value)}
+            />
           </label>
         </div>
 
@@ -314,7 +352,7 @@ function ChatDesk({
 
   useEffect(() => {
     void refreshSnapshot();
-  }, [authSession.token]);
+  }, [authSession.user.id]);
 
   const visibleMessages = useMemo(
     () => messages.filter((message) => isMessageVisibleTo(message, currentUser.id, roomMembers)),
@@ -347,7 +385,7 @@ function ChatDesk({
     setSyncError("");
 
     try {
-      const snapshot = await getJson<MvpSnapshot>(`/mvp?viewerId=${encodeURIComponent(currentUser.id)}`);
+      const snapshot = await getJson<MvpSnapshot>("/mvp");
       const nextUsers = mergeCurrentUser(snapshot.users, currentUser);
 
       setRoomPresentation(snapshot.room);
@@ -393,7 +431,6 @@ function ChatDesk({
     setIsSending(true);
     try {
       const savedMessage = await postJson<Message>("/messages", {
-        senderId: currentUser.id,
         body: trimmed,
         audienceType: effectiveAudience.audienceType,
         targetUserIds: effectiveAudience.targetUserIds,
@@ -451,8 +488,7 @@ function ChatDesk({
     try {
       const invite = await postJson<Invite>("/invites", {
         email,
-        role: "guest",
-        invitedBy: currentUser.id
+        role: "guest"
       });
 
       setInvites((current) => [invite, ...current]);
@@ -472,9 +508,7 @@ function ChatDesk({
 
     setIsConfirmingRead(true);
     try {
-      const confirmedMessage = await postJson<Message>(`/messages/${selectedMessage.id}/confirm`, {
-        userId: currentUser.id
-      });
+      const confirmedMessage = await postJson<Message>(`/messages/${selectedMessage.id}/confirm`, {});
 
       setMessages((current) => current.map((message) => message.id === confirmedMessage.id ? confirmedMessage : message));
       setSelectedMessageId(confirmedMessage.id);
@@ -551,7 +585,6 @@ function ChatDesk({
     setIsUploading(true);
     try {
       const savedMessage = await postJson<Message>("/attachments", {
-        uploaderId: currentUser.id,
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
         sizeBytes: file.size,
@@ -653,7 +686,6 @@ function ChatDesk({
       setIsUploading(true);
       try {
         const savedMessage = await postJson<Message>("/attachments", {
-          uploaderId: currentUser.id,
           fileName: "화면캡처.png",
           mimeType: "image/png",
           sizeBytes: blob.size,
@@ -1305,33 +1337,13 @@ function formatBytes(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function readStoredSession() {
-  try {
-    const rawSession = window.localStorage.getItem(authSessionStorageKey);
-
-    if (!rawSession) {
-      return null;
-    }
-
-    const session = JSON.parse(rawSession) as AuthSession;
-
-    if (new Date(session.expiresAt).getTime() <= Date.now()) {
-      window.localStorage.removeItem(authSessionStorageKey);
-      return null;
-    }
-
-    return session;
-  } catch {
-    window.localStorage.removeItem(authSessionStorageKey);
-    return null;
-  }
-}
-
 async function postJson<TResponse>(path: string, payload: Record<string, unknown>): Promise<TResponse> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "POST",
+    credentials: "include",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "X-HahaTalk-Client": "web-v1"
     },
     body: JSON.stringify(payload)
   });
@@ -1344,7 +1356,9 @@ async function postJson<TResponse>(path: string, payload: Record<string, unknown
 }
 
 async function getJson<TResponse>(path: string): Promise<TResponse> {
-  const response = await fetch(`${apiBaseUrl}${path}`);
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    credentials: "include"
+  });
 
   if (!response.ok) {
     throw new Error(await readApiError(response));

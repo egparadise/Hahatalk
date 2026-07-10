@@ -1,0 +1,63 @@
+name: hahatalk
+
+services:
+  postgres:
+    image: postgres:18.4-alpine3.23
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hahatalk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hahatalk_dev_only}
+      POSTGRES_USER: ${POSTGRES_USER:-hahatalk}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    ports:
+      - "127.0.0.1:54329:5432"
+    restart: unless-stopped
+    volumes:
+      - hahatalk-postgres:/var/lib/postgresql
+
+  redis:
+    image: redis:8.8.0-alpine3.23
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-hahatalk_redis_dev_only}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:6389:6379"
+    restart: unless-stopped
+    volumes:
+      - hahatalk-redis:/data
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-hahatalk_minio_dev_only}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-hahatalk}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    restart: unless-stopped
+    volumes:
+      - hahatalk-objects:/data
+
+volumes:
+  hahatalk-objects:
+  hahatalk-postgres:
+  hahatalk-redis:

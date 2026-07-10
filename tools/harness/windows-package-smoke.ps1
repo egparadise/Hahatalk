@@ -38,8 +38,14 @@ function Wait-RuntimeStatus {
 function Start-HahaTalk {
   $startedAt = Get-Date
   $process = Start-Process -FilePath $resolvedExecutable -PassThru
-  $status = Wait-RuntimeStatus -ExpectedPid $process.Id -StartedAt $startedAt
-  return @{ Process = $process; Status = $status }
+  try {
+    $status = Wait-RuntimeStatus -ExpectedPid $process.Id -StartedAt $startedAt
+    return @{ Process = $process; Status = $status }
+  }
+  catch {
+    & taskkill.exe /PID $process.Id /T /F 2>$null | Out-Null
+    throw
+  }
 }
 
 function Stop-HahaTalk {
@@ -66,6 +72,39 @@ function Stop-HahaTalk {
   }
 }
 
+function New-AuthenticatedSession {
+  param(
+    [string]$ApiUrl,
+    [string]$WebOrigin,
+    [string]$DisplayName,
+    [string]$Email,
+    [string]$CharacterId
+  )
+
+  $password = if ($env:HAHATALK_SMOKE_PASSWORD) { $env:HAHATALK_SMOKE_PASSWORD } else { "HahaTalk!Stage2" }
+  $headers = @{
+    Origin = $WebOrigin
+    "X-HahaTalk-Client" = "web-v1"
+  }
+  $signupBody = @{
+    characterId = $CharacterId
+    displayName = $DisplayName
+    email = $Email
+    password = $password
+  } | ConvertTo-Json
+
+  try {
+    Invoke-RestMethod -Method Post -Uri "$ApiUrl/auth/signup" -Headers $headers -ContentType "application/json" -Body $signupBody -SessionVariable authenticatedSession | Out-Null
+  }
+  catch {
+    if ([int]$_.Exception.Response.StatusCode -ne 409) { throw }
+    $loginBody = @{ email = $Email; password = $password } | ConvertTo-Json
+    Invoke-RestMethod -Method Post -Uri "$ApiUrl/auth/login" -Headers $headers -ContentType "application/json" -Body $loginBody -SessionVariable authenticatedSession | Out-Null
+  }
+
+  return $authenticatedSession
+}
+
 if (Get-LiveStatus) {
   throw "A HahaTalk runtime is already active. Close it before running the package smoke test."
 }
@@ -73,8 +112,10 @@ if (Get-LiveStatus) {
 $run = Start-HahaTalk
 $status = $run.Status
 $health = Invoke-RestMethod -Uri "$($status.apiUrl)/health"
-$owner = Invoke-RestMethod -Uri "$($status.apiUrl)/mvp?viewerId=user-you"
-$participant = Invoke-RestMethod -Uri "$($status.apiUrl)/mvp?viewerId=user-mina"
+$ownerSession = New-AuthenticatedSession -ApiUrl $status.apiUrl -WebOrigin $status.webUrl -DisplayName "HahaTalk Owner" -Email "you@inviz.co.kr" -CharacterId "char-calm-lead"
+$participantSession = New-AuthenticatedSession -ApiUrl $status.apiUrl -WebOrigin $status.webUrl -DisplayName "Mina Kim" -Email "mina@inviz.co.kr" -CharacterId "char-focus-maker"
+$owner = Invoke-RestMethod -Uri "$($status.apiUrl)/mvp" -WebSession $ownerSession
+$participant = Invoke-RestMethod -Uri "$($status.apiUrl)/mvp?viewerId=user-you" -WebSession $participantSession
 
 if (!$status.packaged -or !$status.rendererApiHealthy -or !$health.ok) { throw "Packaged runtime health verification failed." }
 if ($owner.room.mode -ne "hub_owner" -or @($owner.users).Count -ne 4) { throw "Owner projection verification failed." }

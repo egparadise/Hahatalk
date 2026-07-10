@@ -199,12 +199,14 @@ export interface AuditLog {
 export interface SignupInput {
   displayName: string;
   email: string;
+  password: string;
   characterId: string;
   inviteCode?: string;
 }
 
 export interface LoginInput {
   email: string;
+  password: string;
 }
 
 export interface SendMessageInput {
@@ -239,19 +241,20 @@ export interface ConfirmMessageReadInput {
   userId: string;
 }
 
+export interface AuthPermissions {
+  canInviteGuests: boolean;
+  canUploadFiles: boolean;
+  canOpenReadReport: boolean;
+  canDownloadFiles: boolean;
+  canCreateBroadcast: boolean;
+  canRequestRemoteSupport: boolean;
+}
+
 export interface AuthSession {
-  token: string;
   user: User;
   roomId: string;
   role: MemberRole;
-  permissions: {
-    canInviteGuests: boolean;
-    canUploadFiles: boolean;
-    canOpenReadReport: boolean;
-    canDownloadFiles: boolean;
-    canCreateBroadcast: boolean;
-    canRequestRemoteSupport: boolean;
-  };
+  permissions: AuthPermissions;
   createdAt: string;
   expiresAt: string;
 }
@@ -395,10 +398,13 @@ export function createAuthSession(
   role: MemberRole,
   roomId: string,
   createdAt = new Date().toISOString(),
-  roomScope?: Pick<Room, "type" | "ownerId">
+  roomScope?: Pick<Room, "type" | "ownerId">,
+  absoluteExpiresAt?: string
 ): AuthSession {
-  const expiresAt = new Date(createdAt);
-  expiresAt.setHours(expiresAt.getHours() + 8);
+  const expiresAt = absoluteExpiresAt ? new Date(absoluteExpiresAt) : new Date(createdAt);
+  if (!absoluteExpiresAt) {
+    expiresAt.setHours(expiresAt.getHours() + 12);
+  }
 
   const isGuest = role === "guest" || role === "subscriber";
   const isManager = role === "owner" || role === "admin";
@@ -406,7 +412,6 @@ export function createAuthSession(
   const canManageConversation = isManager && !isHiddenHubParticipant;
 
   return {
-    token: `demo-session-${user.id}-${Date.parse(createdAt) || Date.now()}`,
     user,
     roomId,
     role,

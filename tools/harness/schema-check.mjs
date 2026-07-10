@@ -11,6 +11,7 @@ if (!existsSync(schemaPath)) {
 const schema = readFileSync(schemaPath, "utf8");
 const requiredTables = [
   "users",
+  "web_sessions",
   "consent_records",
   "contact_collections",
   "conversation_spaces",
@@ -66,7 +67,9 @@ const requiredFragments = [
   "place_name",
   "voice_profile",
   "remote_control",
-  "outbox_events_unpublished_idx"
+  "outbox_events_unpublished_idx",
+  "token_hash bytea",
+  "session_auth_version"
 ];
 
 for (const fragment of requiredFragments) {
@@ -87,7 +90,8 @@ const governanceFiles = [
   ".codex/hooks.json",
   ".codex/agents/architecture-researcher.toml",
   ".codex/agents/privacy-reviewer.toml",
-  ".codex/agents/feature-worker.toml"
+  ".codex/agents/feature-worker.toml",
+  "apps/api/migrations/001_auth_foundation.sql"
 ];
 
 for (const file of governanceFiles) {

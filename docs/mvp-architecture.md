@@ -9,7 +9,7 @@
 - `packages/contracts`: shared viewer-safe domain contracts.
 - PostgreSQL: relational state and metadata.
 - Redis: presence, rate limits, queues, and Socket.IO scale-out.
-- S3/MinIO: file, photo, video, audio, recording, avatar, and generated media bytes.
+- S3-compatible object storage: file, photo, video, audio, recording, avatar, and generated media bytes. The pinned MinIO image is local-development-only while the active provider is reevaluated.
 - LiveKit: voice, video, screen sharing, webinar, and broadcast media.
 - Python workers: Whisper-compatible STT, Qwen 3.5+ assistant jobs, Qwen3-TTS, summaries, and avatar processing.
 - Remote support control plane: HahaTalk consent/audit orchestration with a separately sandboxed Windows support agent.
@@ -41,19 +41,20 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 
 ## Current Executable Slice
 
-- API-backed signup/login and character selection.
-- Viewer-specific `GET /mvp?viewerId=...` snapshot.
-- Viewer-specific `GET /spaces/:spaceId/view?viewerId=...` projection.
+- PostgreSQL-backed signup/login and character selection with Argon2id password hashes.
+- Opaque HttpOnly/SameSite cookie sessions; only SHA-256 token digests are stored in `web_sessions`.
+- Authenticated `GET /auth/me`, `POST /auth/logout`, `GET /mvp`, and `GET /spaces/:spaceId/view` projection.
+- Exact-Origin and custom-header checks on state-changing browser requests.
 - API-backed `POST /messages`, `POST /invites`, and `POST /attachments`.
 - Delivery-based visibility and read confirmation through `POST /messages/:messageId/confirm`.
-- User-specific Socket.IO rooms instead of hub-wide message broadcast.
+- Authenticated user-specific Socket.IO rooms instead of hub-wide message broadcast.
 - File/photo/PDF/video metadata previews and PC capture path.
 - Repo-local AGENTS, Skill, Agents, Hooks, schema validation, and harness loop.
 
 ## Production Boundaries Still Required
 
-- Replace demo identity headers/query parameters with verified sessions and authorization guards.
-- Persist through PostgreSQL transactions and publish through an outbox worker.
+- Replace demo account claiming with invitation/email verification, passkeys or enterprise SSO, device-session management, and rate limiting.
+- Persist conversations through PostgreSQL transactions and publish through an outbox worker; messages and invitations are still demo-memory state.
 - Add Redis presence without exposing hub participants to one another.
 - Add signed multipart upload, virus scanning, metadata extraction, and media derivatives.
 - Add LiveKit token service, E2EE key policy, call state, and consented recording.
