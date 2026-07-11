@@ -4,6 +4,7 @@ import { AuthModule } from "./auth/auth.module.js";
 import { DatabaseModule } from "./database/database.module.js";
 import { InvitationModule } from "./invitations/invitation.module.js";
 import { ChatModule } from "./modules/chat.module.js";
+import { ContactsModule } from "./contacts/contacts.module.js";
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { ChatModule } from "./modules/chat.module.js";
     DatabaseModule,
     AuthModule,
     InvitationModule,
+    ContactsModule,
     ChatModule
   ]
 })

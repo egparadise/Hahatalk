@@ -14,6 +14,10 @@ const requiredTables = [
   "web_sessions",
   "consent_records",
   "contact_collections",
+  "contact_collection_members",
+  "contact_member_tags",
+  "contact_collection_policies",
+  "contact_collection_consents",
   "conversation_spaces",
   "space_memberships",
   "hub_spokes",
@@ -72,7 +76,8 @@ const requiredFragments = [
   "token_hash bytea",
   "session_auth_version",
   "token_digest bytea",
-  "bootstrap_claim_allowed"
+  "bootstrap_claim_allowed",
+  "contact_collection_consents_effective_idx"
 ];
 
 for (const fragment of requiredFragments) {
@@ -96,7 +101,8 @@ const governanceFiles = [
   ".codex/agents/feature-worker.toml",
   "apps/api/migrations/001_auth_foundation.sql",
   "apps/api/migrations/002_invitation_consent_guest_approval.sql",
-  "apps/api/migrations/003_persisted_conversation_core.sql"
+  "apps/api/migrations/003_persisted_conversation_core.sql",
+  "apps/api/migrations/004_contacts_family_managed_groups.sql"
 ];
 
 for (const file of governanceFiles) {

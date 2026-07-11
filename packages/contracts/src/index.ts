@@ -32,6 +32,11 @@ export type VirusScanStatus = "pending" | "clean" | "blocked";
 export type ApprovalPolicy = "owner_and_invitee" | "admins_and_invitee" | "all_members_and_invitee" | "quorum_and_invitee";
 export type InvitationStatus = "pending_approval" | "sent" | "accepted" | "declined" | "expired" | "revoked";
 export type InvitationDecision = "approved" | "rejected";
+export type ContactCollectionKind = "family" | "team" | "customers" | "service" | "custom";
+export type ContactCollectionVisibility = "owner_only" | "shared";
+export type ContactRosterVisibility = "shared" | "owner_only";
+export type ContactConsentDecision = "granted" | "denied" | "revoked";
+export type ContactFollowUpState = "none" | "planned" | "waiting" | "completed";
 
 export interface Organization {
   id: string;
@@ -210,6 +215,73 @@ export interface InvitationAcceptanceResult {
   role: "member" | "guest";
   status: "accepted" | "pending_approval";
   loginAllowed: boolean;
+}
+
+export interface ContactPerson {
+  id: string;
+  displayName: string;
+  email: string;
+  role: MemberRole;
+  character: CharacterPreset;
+}
+
+export interface ContactPrivateDetails {
+  label: string;
+  notes: string;
+  tags: string[];
+  followUpState: ContactFollowUpState;
+  followUpAt?: string;
+  sortOrder: number;
+}
+
+export interface ContactCollectionMemberView {
+  person: ContactPerson;
+  addedAt: string;
+  privateDetails?: ContactPrivateDetails;
+  consentStatus?: "pending" | ContactConsentDecision;
+}
+
+export interface ContactCollectionView {
+  id: string;
+  name: string;
+  description: string;
+  kind: ContactCollectionKind;
+  visibility: ContactCollectionVisibility;
+  rosterVisibility: ContactRosterVisibility;
+  policyVersion: number;
+  owner: ContactPerson;
+  isOwner: boolean;
+  members: ContactCollectionMemberView[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContactConsentRequest {
+  collectionId: string;
+  collectionName: string;
+  collectionDescription: string;
+  kind: "family" | "team";
+  owner: ContactPerson;
+  policyVersion: number;
+  rosterVisibility: ContactRosterVisibility;
+  sharedFields: string[];
+  myDecision?: ContactConsentDecision;
+  requestedAt: string;
+}
+
+export interface ContactsDashboard {
+  canManage: boolean;
+  ownedCollections: ContactCollectionView[];
+  sharedCollections: ContactCollectionView[];
+  consentRequests: ContactConsentRequest[];
+  availablePeople: ContactPerson[];
+}
+
+export interface ContactConsentResult {
+  collectionId: string;
+  policyVersion: number;
+  decision: ContactConsentDecision;
+  decidedAt: string;
 }
 
 export interface DeviceSessionView {

@@ -17,6 +17,9 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Per-recipient `message_deliveries` and authenticated user-specific Socket.IO channels that prevent hub roster/message leakage.
 - Atomic idempotency keys and one-recipient outbox events for retry-safe message creation and realtime projection.
 - Persisted reply, edit, delete, search, read time, and explicit confirmation flows.
+- Owner-private family/team/customer/service/custom contact collections with private labels, notes, normalized tags, and follow-up state.
+- Exact-policy-version consent for shared family/team collections, viewer-safe rosters, revoke/re-consent, and append-only policy/audit history.
+- A PC contacts desk for collection/member management and restricted guest consent without exposing owner-private relationship data.
 - Internal and guest invite affordances with guest-safe permission labels.
 - File/photo/PDF/video metadata previews.
 - Screen capture share flow for PC browsers/desktops that support `getDisplayMedia`.
@@ -47,6 +50,7 @@ npm run schema:check
 npm run auth:integration
 npm run invitation:integration
 npm run conversation:integration
+npm run contacts:integration
 npm run harness
 ```
 
@@ -85,4 +89,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-2-auth-persistence.md`: Stage 2A database, password, cookie, migration, and restart-test contract.
 - `docs/stage-2b-invitations-consent.md`: Stage 2B invitation state machine, guest approval, consent evidence, API, and tests.
 - `docs/stage-3-persisted-conversations.md`: Stage 3 conversation schema, privacy projection, idempotency, outbox, API, and test contract.
+- `docs/stage-4-contacts-family-managed-groups.md`: Stage 4 relationship authorization, versioned consent, viewer projections, PC UX, and privacy harness.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

@@ -52,9 +52,21 @@ Invoke-CheckedCommand -Command @("npm", "test")
 Invoke-CheckedCommand -Command @("npm", "run", "schema:check")
 Invoke-CheckedCommand -Command @("npm", "run", "desktop:check")
 Invoke-CheckedCommand -Command @("npm", "run", "build")
+if ($env:OS -eq "Windows_NT" -and [string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
+  Invoke-CheckedCommand -Command @(
+    "powershell",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    "tools/dev/portable-postgres.ps1",
+    "-Action",
+    "Start"
+  )
+}
 Invoke-CheckedCommand -Command @("npm", "run", "auth:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "invitation:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "conversation:integration")
+Invoke-CheckedCommand -Command @("npm", "run", "contacts:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
 
 $verificationDir = Join-Path $root "node_modules\.cache"

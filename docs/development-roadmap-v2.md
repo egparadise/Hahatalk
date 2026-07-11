@@ -55,7 +55,7 @@ Exit: fresh-DB and installed-Windows tests prove one success under concurrent ac
 5. Edit, delete, reply, search, typing, and presence without hub leakage.
 6. Offline outbox, retries, idempotency, and multi-device reconciliation.
 
-Exit: automated multi-user tests cover success, unauthorized access, manipulated targets, reconnect, and duplicate submission.
+Exit: automated multi-user tests cover success, unauthorized access, manipulated targets, reconnect, and duplicate submission. Complete.
 
 ## Stage 4 - Contacts, Family, And Managed Groups
 
@@ -64,7 +64,7 @@ Exit: automated multi-user tests cover success, unauthorized access, manipulated
 3. Relationship notes, tags, and follow-up state.
 4. Group policy changes and member consent history.
 
-Exit: private collection names/membership never appear to grouped users unless explicitly shared.
+Exit: fresh-DB and installed-Windows tests prove private collection non-disclosure, owner-private relationship data, exact-version consent, viewer-safe rosters, guest restriction, audit history, restart persistence, and archive removal. Complete.
 
 ## Stage 5 - Media And Document Desk
 

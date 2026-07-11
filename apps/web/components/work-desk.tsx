@@ -73,6 +73,8 @@ import {
   type TypingUpdate,
   type User
 } from "@hahatalk/contracts";
+import { apiBaseUrl, getJson, postJson, requestJson } from "../lib/api-client";
+import { ContactsDesk } from "./contacts-desk";
 
 type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
 type ReadReportRow = ReturnType<typeof buildReadReport>[number];
@@ -80,18 +82,6 @@ type AuthMode = "activate" | "login" | "invitation";
 type CredentialAuthMode = Exclude<AuthMode, "invitation">;
 
 const reactions = ["확인", "완료", "질문", "긴급", "감사"];
-type HahaTalkDesktopBridge = {
-  apiBaseUrl?: string;
-  isDesktop: boolean;
-  platform: string;
-  version?: string;
-};
-
-const desktopBridge = typeof window === "undefined"
-  ? undefined
-  : (window as Window & { hahaTalkDesktop?: HahaTalkDesktopBridge }).hahaTalkDesktop;
-const apiBaseUrl = desktopBridge?.apiBaseUrl ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:4000";
-
 export function WorkDesk() {
   const [authMode, setAuthMode] = useState<AuthMode>("activate");
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
@@ -103,6 +93,7 @@ export function WorkDesk() {
   const [password, setPassword] = useState("");
   const [selectedCharacterId, setSelectedCharacterId] = useState(characterPresets[0]?.id ?? "");
   const [initialInviteCode, setInitialInviteCode] = useState("");
+  const [deskMode, setDeskMode] = useState<"chat" | "contacts">("chat");
   const selectedCharacter = characterPresets.find((character) => character.id === selectedCharacterId) ?? characterPresets[0]!;
 
   useEffect(() => {
@@ -178,6 +169,7 @@ export function WorkDesk() {
     }
     setAuthSession(null);
     setAuthMode("login");
+    setDeskMode("chat");
   }
 
   if (isRestoringAuth) {
@@ -218,12 +210,20 @@ export function WorkDesk() {
     );
   }
 
-  return (
+  return deskMode === "contacts" ? (
+    <ContactsDesk
+      authSession={authSession}
+      currentUser={currentUser}
+      onLogout={logout}
+      onOpenChat={() => setDeskMode("chat")}
+    />
+  ) : (
     <ChatDesk
       authSession={authSession}
       currentUser={currentUser}
       initialInviteCode={initialInviteCode}
       onLogout={logout}
+      onOpenContacts={() => setDeskMode("contacts")}
       users={users}
     />
   );
@@ -581,12 +581,14 @@ function ChatDesk({
   currentUser,
   initialInviteCode,
   onLogout,
+  onOpenContacts,
   users
 }: {
   authSession: AuthSession;
   currentUser: User;
   initialInviteCode: string;
   onLogout: () => void;
+  onOpenContacts: () => void;
   users: User[];
 }) {
   const initialRoomMembers = mergeCurrentMembership(demoRoomMembers, currentUser, authSession.role, authSession.createdAt);
@@ -1326,7 +1328,7 @@ function ChatDesk({
           <button className="rail-button" data-active="true" title="채팅" type="button">
             <MessageCircle size={21} />
           </button>
-          <button className="rail-button" title="사람" type="button">
+          <button className="rail-button" onClick={onOpenContacts} title="사람" type="button">
             <Users size={21} />
           </button>
           <button className="rail-button" title="일정" type="button">
@@ -2297,44 +2299,6 @@ function formatBytes(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-async function requestJson<TResponse>(
-  path: string,
-  method: "POST" | "PATCH" | "DELETE",
-  payload?: Record<string, unknown>
-): Promise<TResponse> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    method,
-    credentials: "include",
-    headers: {
-      ...(payload ? { "Content-Type": "application/json" } : {}),
-      "X-HahaTalk-Client": "web-v1"
-    },
-    ...(payload ? { body: JSON.stringify(payload) } : {})
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response));
-  }
-
-  return response.json() as Promise<TResponse>;
-}
-
-async function postJson<TResponse>(path: string, payload: Record<string, unknown>): Promise<TResponse> {
-  return requestJson<TResponse>(path, "POST", payload);
-}
-
-async function getJson<TResponse>(path: string): Promise<TResponse> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    credentials: "include"
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response));
-  }
-
-  return response.json() as Promise<TResponse>;
-}
-
 function mergeCurrentUser(users: User[], currentUser: User) {
   const mergedUsers = users.map((user) => user.id === currentUser.id ? currentUser : user);
 
@@ -2385,15 +2349,4 @@ function mergeOlderMessages(older: Message[], current: Message[]) {
   return [...byId.values()].sort(
     (left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)
   );
-}
-
-async function readApiError(response: Response) {
-  try {
-    const body = await response.json() as { message?: string | string[]; error?: string };
-    const message = Array.isArray(body.message) ? body.message.join(" ") : body.message;
-
-    return message ?? body.error ?? `요청 실패 (${response.status})`;
-  } catch {
-    return `요청 실패 (${response.status})`;
-  }
 }

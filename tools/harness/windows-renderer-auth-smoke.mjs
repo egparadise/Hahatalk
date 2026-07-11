@@ -136,7 +136,11 @@ async function evaluate(cdp, expression) {
     returnByValue: true
   });
   if (result.exceptionDetails) {
-    throw new Error(result.exceptionDetails.text ?? "Renderer evaluation failed.");
+    throw new Error(
+      result.exceptionDetails.exception?.description
+      ?? result.exceptionDetails.text
+      ?? "Renderer evaluation failed."
+    );
   }
   return result.result?.value;
 }
@@ -162,10 +166,42 @@ async function captureScreenshot(cdp, screenshotPath, message) {
   const capture = await cdp.send("Page.captureScreenshot", {
     captureBeyondViewport: false,
     format: "png",
-    fromSurface: false
+    fromSurface: true
   });
   await writeFile(screenshotPath, Buffer.from(capture.data, "base64"));
   assert((await readFile(screenshotPath)).length > 10_000, message);
+}
+
+async function loginRenderer(cdp, email, password, message) {
+  await evaluate(cdp, `
+    (() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      const setValue = (input, value) => {
+        setter.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      setValue(document.querySelector('input[type="email"]'), ${JSON.stringify(email)});
+      setValue(document.querySelector('input[type="password"]'), ${JSON.stringify(password)});
+      document.querySelector('form').requestSubmit();
+    })()
+  `);
+  await waitForExpression(cdp, `Boolean(document.querySelector('button[title="로그아웃"]'))`, message);
+}
+
+async function logoutRenderer(cdp, message) {
+  await evaluate(cdp, `document.querySelector('button[title="로그아웃"]').click()`);
+  await waitForExpression(cdp, `document.body.innerText.includes('HahaTalk 로그인')`, message);
+}
+
+async function openContacts(cdp, message) {
+  await evaluate(cdp, `document.querySelector('button[title="사람"]').click()`);
+  await waitForExpression(cdp, `Boolean(document.querySelector('.contacts-sidebar')) && document.body.innerText.includes('연락처 그룹')`, message);
+  await waitForExpression(
+    cdp,
+    `!document.querySelector('.contacts-loading[aria-busy="true"]')`,
+    `${message} Contacts data did not finish loading.`
+  );
 }
 
 const desktopPackage = JSON.parse(await readFile(
@@ -183,6 +219,14 @@ const screenshotPath = path.resolve(argument(
 const guestScreenshotPath = path.resolve(argument(
   "guest-screenshot",
   path.join(process.cwd(), "apps", "desktop", "out", "stage3-guest.png")
+));
+const contactsOwnerScreenshotPath = path.resolve(argument(
+  "contacts-owner-screenshot",
+  path.join(process.cwd(), "apps", "desktop", "out", "stage4-owner-contacts.png")
+));
+const contactsMemberScreenshotPath = path.resolve(argument(
+  "contacts-member-screenshot",
+  path.join(process.cwd(), "apps", "desktop", "out", "stage4-member-contacts.png")
 ));
 const password = process.env.HAHATALK_SMOKE_PASSWORD ?? "HahaTalk!Stage2";
 const guestEmail = `renderer-guest-${Date.now()}@example.test`;
@@ -207,8 +251,9 @@ const application = spawn(executablePath, [`--remote-debugging-port=${debugPort}
   windowsHide: false
 });
 let cdp;
+let runtime;
 try {
-  const runtime = await waitForRuntime(statusPath, application.pid);
+  runtime = await waitForRuntime(statusPath, application.pid);
   const target = await waitForDebugTarget(debugPort);
   cdp = await connectCdp(target.webSocketDebuggerUrl);
   await cdp.send("Page.enable");
@@ -456,8 +501,133 @@ try {
   );
   await captureScreenshot(cdp, guestScreenshotPath, "Guest restriction screenshot is unexpectedly small.");
 
-  await evaluate(cdp, `document.querySelector('button[title="로그아웃"]').click()`);
-  await waitForExpression(cdp, `document.body.innerText.includes('HahaTalk 로그인')`, "Guest renderer logout did not return to login.");
+  const contactGroupMarker = `Renderer family ${Date.now()}`;
+  const contactPrivateMarker = `Owner-only note ${Date.now()}`;
+  await logoutRenderer(cdp, "Guest did not return to login before the contacts check.");
+  await loginRenderer(cdp, "you@inviz.co.kr", password, "Owner could not log back in for the contacts check.");
+  await openContacts(cdp, "Owner contacts desk did not open.");
+  await waitForExpression(cdp, `Boolean(document.querySelector('form.contacts-create'))`, "Owner contacts creation form did not become available.");
+  await evaluate(cdp, `
+    (() => {
+      const setInput = (input, value) => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        setter.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      const form = document.querySelector('form.contacts-create');
+      setInput(form.querySelector('input[placeholder="새 그룹 이름"]'), ${JSON.stringify(contactGroupMarker)});
+      setInput(form.querySelector('input[placeholder="설명"]'), 'Renderer consented family');
+      form.requestSubmit();
+    })()
+  `);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.collection-item')].some((item) => item.innerText.includes(${JSON.stringify(contactGroupMarker)}))`,
+    "Owner could not create a family collection in the installed renderer."
+  );
+  await evaluate(cdp, `
+    (() => {
+      const section = [...document.querySelectorAll('.contacts-control-section')]
+        .find((candidate) => candidate.innerText.includes('구성원 추가'));
+      const select = section.querySelector('select');
+      const option = [...select.options].find((candidate) => candidate.textContent.includes(${JSON.stringify(guestEmail)}));
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      [...section.querySelectorAll('button')].find((button) => button.textContent.trim() === '추가').click();
+    })()
+  `);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.contact-member-item')].some((item) => item.innerText.includes('Renderer Guest'))`,
+    "Owner could not add the invited guest to the family collection."
+  );
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.contact-member-item')]
+      .find((item) => item.innerText.includes('Renderer Guest')).click()
+  `);
+  await waitForExpression(cdp, `Boolean(document.querySelector('.member-editor'))`, "Private member editor did not open.");
+  await evaluate(cdp, `
+    (() => {
+      const editor = document.querySelector('.member-editor');
+      const inputs = [...editor.querySelectorAll('input')].filter((input) => input.type === 'text');
+      const inputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      const textSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+      inputSetter.call(inputs[0], 'renderer family');
+      inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+      textSetter.call(editor.querySelector('.member-notes'), ${JSON.stringify(contactPrivateMarker)});
+      editor.querySelector('.member-notes').dispatchEvent(new Event('input', { bubbles: true }));
+      [...editor.querySelectorAll('button')].find((button) => button.textContent.trim() === '저장').click();
+    })()
+  `);
+  await waitForExpression(cdp, `document.body.innerText.includes('관계 정보를 저장했습니다.')`, "Owner-private relationship details did not save.");
+  await captureScreenshot(cdp, contactsOwnerScreenshotPath, "Owner contacts screenshot is unexpectedly small.");
+
+  await logoutRenderer(cdp, "Owner did not return to login for the owner-only privacy check.");
+  await loginRenderer(cdp, guestEmail, guestPassword, "Guest could not log in for the owner-only privacy check.");
+  await openContacts(cdp, "Guest contacts desk did not open for the owner-only privacy check.");
+  assert(
+    await evaluate(cdp, `!document.body.innerText.includes(${JSON.stringify(contactGroupMarker)})`),
+    "Owner-only family collection leaked to its guest member."
+  );
+  assert(
+    await evaluate(cdp, `!document.body.innerText.includes(${JSON.stringify(contactPrivateMarker)})`),
+    "Owner-private relationship notes leaked to the guest member."
+  );
+
+  await logoutRenderer(cdp, "Guest did not return to login before the sharing policy check.");
+  await loginRenderer(cdp, "you@inviz.co.kr", password, "Owner could not log in to share the family collection.");
+  await openContacts(cdp, "Owner contacts desk did not reopen for sharing.");
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.collection-item')]
+      .find((item) => item.innerText.includes(${JSON.stringify(contactGroupMarker)})).click()
+  `);
+  await waitForExpression(cdp, `document.querySelector('.room-title')?.textContent.includes(${JSON.stringify(contactGroupMarker)})`, "Owner family collection did not reopen.");
+  await evaluate(cdp, `
+    (() => {
+      const section = [...document.querySelectorAll('.contacts-control-section')]
+        .find((candidate) => candidate.innerText.includes('공유 정책'));
+      [...section.querySelectorAll('button')]
+        .find((button) => button.textContent.trim() === '동의 후 공유').click();
+    })()
+  `);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.contacts-control-section')]
+      .find((candidate) => candidate.innerText.includes('공유 정책'))
+      ?.querySelectorAll('button')
+      && [...[...document.querySelectorAll('.contacts-control-section')]
+        .find((candidate) => candidate.innerText.includes('공유 정책')).querySelectorAll('button')]
+        .find((button) => button.textContent.trim() === '동의 후 공유')?.dataset.active === 'true'`,
+    "Shared policy selection did not become active."
+  );
+  await evaluate(cdp, `
+    (() => {
+      const section = [...document.querySelectorAll('.contacts-control-section')]
+        .find((candidate) => candidate.innerText.includes('공유 정책'));
+      [...section.querySelectorAll('button')]
+        .find((button) => button.textContent.trim() === '정책 적용').click();
+    })()
+  `);
+  await waitForExpression(cdp, `document.body.innerText.includes('공유 정책을 적용했습니다.')`, "Installed renderer did not apply the shared family policy.");
+
+  await logoutRenderer(cdp, "Owner did not return to login before member consent.");
+  await loginRenderer(cdp, guestEmail, guestPassword, "Guest could not log in for family consent.");
+  await openContacts(cdp, "Guest contacts desk did not open for consent.");
+  await waitForExpression(cdp, `document.body.innerText.includes(${JSON.stringify(contactGroupMarker)}) && Boolean(document.querySelector('.consent-main-actions'))`, "Guest did not receive the scoped family consent request.");
+  await evaluate(cdp, `document.querySelector('.consent-main-actions .primary-button').click()`);
+  await waitForExpression(
+    cdp,
+    `Boolean(document.querySelector('.contact-roster-view')) && document.querySelectorAll('.contact-member-item').length === 2`,
+    "Consenting guest did not receive the owner-and-self family roster."
+  );
+  assert(
+    await evaluate(cdp, `!document.body.innerText.includes(${JSON.stringify(contactPrivateMarker)})`),
+    "Consented shared roster exposed owner-private relationship notes."
+  );
+  await captureScreenshot(cdp, contactsMemberScreenshotPath, "Consented member contacts screenshot is unexpectedly small.");
+
+  await logoutRenderer(cdp, "Guest renderer logout did not return to login.");
   await Promise.race([
     cdp.send("Browser.close").catch(() => undefined),
     delay(500)
@@ -479,10 +649,29 @@ try {
   assert(statusRemoved, "HahaTalk runtime status remained after renderer smoke shutdown.");
   assert(!isProcessRunning(application.pid), "HahaTalk process remained after renderer smoke shutdown.");
   assert(!(await isPortOpen(runtime.databasePort)), "Embedded PostgreSQL remained reachable after renderer smoke shutdown.");
-  console.log(`Windows renderer invitation check passed: ${runtime.version}, owner ${screenshotPath}, guest ${guestScreenshotPath}`);
+  console.log(`Windows renderer invitation and contacts check passed: ${runtime.version}, owner ${screenshotPath}, guest ${guestScreenshotPath}, contacts ${contactsOwnerScreenshotPath}, member ${contactsMemberScreenshotPath}`);
 } finally {
+  if (isProcessRunning(application.pid)) {
+    await Promise.race([
+      cdp?.send("Browser.close").catch(() => undefined) ?? Promise.resolve(),
+      delay(1_000)
+    ]);
+    for (let attempt = 0; attempt < 30 && isProcessRunning(application.pid); attempt += 1) {
+      await delay(200);
+    }
+  }
   cdp?.close();
   if (isProcessRunning(application.pid)) {
-    application.kill();
+    try {
+      execFileSync("taskkill.exe", ["/PID", String(application.pid), "/T", "/F"], { stdio: "ignore" });
+    } catch {
+      application.kill();
+    }
   }
+  if (runtime?.databaseMode === "embedded-postgresql" && await isPortOpen(runtime.databasePort)) {
+    const pgCtl = path.join(path.dirname(executablePath), "resources", "runtime", "postgres", "bin", "pg_ctl.exe");
+    const dataDirectory = path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "HahaTalk", "postgres-data");
+    execFileSync(pgCtl, ["-D", dataDirectory, "-m", "fast", "-w", "stop"], { stdio: "ignore" });
+  }
+  await rm(statusPath, { force: true });
 }

@@ -50,6 +50,8 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - `POST /attachments` remains a temporary metadata demo until the Stage 5 object-storage pipeline.
 - PostgreSQL-backed `/invitations` create/list/preview/accept/decline/decision/revoke state machine.
 - PostgreSQL-backed `/auth/sessions` list and session-revoke controls.
+- PostgreSQL-backed owner-private contact collections, relationship notes/tags/follow-up, immutable sharing policies, and append-only exact-version consent.
+- Viewer-specific `/contacts` owner, pending-request, and consented-shared projections plus the PC contacts management desk.
 - Delivery-based visibility and read confirmation through `POST /messages/:messageId/confirm`.
 - Authenticated user-specific Socket.IO rooms instead of hub-wide message broadcast.
 - File/photo/PDF/video metadata previews and PC capture path.
