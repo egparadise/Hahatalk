@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { access, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -70,6 +70,26 @@ async function waitForRuntime(statusPath, expectedPid) {
     await delay(250);
   }
   throw new Error("Installed HahaTalk renderer did not become ready.");
+}
+
+async function claimSmokeOwner(runtime, password) {
+  const response = await fetch(`${runtime.apiUrl}/auth/signup`, {
+    body: JSON.stringify({
+      characterId: "char-calm-lead",
+      displayName: "HahaTalk Owner",
+      email: "you@inviz.co.kr",
+      password
+    }),
+    headers: {
+      "Content-Type": "application/json",
+      "Origin": runtime.webUrl,
+      "X-HahaTalk-Client": "web-v1"
+    },
+    method: "POST",
+    signal: AbortSignal.timeout(20_000)
+  });
+  const body = await response.text();
+  assert(response.status === 201, `Isolated renderer owner claim failed: ${response.status} ${body}`);
 }
 
 async function waitForDebugTarget(port) {
@@ -306,7 +326,9 @@ const mediaScreenshotPath = path.resolve(argument(
 const password = process.env.HAHATALK_SMOKE_PASSWORD ?? "HahaTalk!Stage2";
 const guestEmail = `renderer-guest-${Date.now()}@example.test`;
 const guestPassword = "Stage2B!RendererGuest";
-const statusPath = path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "HahaTalk", "runtime-status.json");
+const smokeAppDataRoot = await mkdtemp(path.join(os.tmpdir(), "hahatalk-renderer-smoke-"));
+const smokeUserDataRoot = path.join(smokeAppDataRoot, "HahaTalk");
+const statusPath = path.join(smokeUserDataRoot, "runtime-status.json");
 const debugPort = await findAvailablePort();
 await access(executablePath);
 try {
@@ -322,6 +344,7 @@ await rm(statusPath, { force: true });
 
 const application = spawn(executablePath, [`--remote-debugging-port=${debugPort}`], {
   detached: false,
+  env: { ...process.env, HAHATALK_USER_DATA_DIR: smokeUserDataRoot },
   stdio: "ignore",
   windowsHide: false
 });
@@ -329,6 +352,7 @@ let cdp;
 let runtime;
 try {
   runtime = await waitForRuntime(statusPath, application.pid);
+  await claimSmokeOwner(runtime, password);
   const target = await waitForDebugTarget(debugPort);
   cdp = await connectCdp(target.webSocketDebuggerUrl);
   await cdp.send("Page.enable");
@@ -821,8 +845,9 @@ try {
   }
   if (runtime?.databaseMode === "embedded-postgresql" && await isPortOpen(runtime.databasePort)) {
     const pgCtl = path.join(path.dirname(executablePath), "resources", "runtime", "postgres", "bin", "pg_ctl.exe");
-    const dataDirectory = path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "HahaTalk", "postgres-data");
+    const dataDirectory = path.join(smokeUserDataRoot, "postgres-data");
     execFileSync(pgCtl, ["-D", dataDirectory, "-m", "fast", "-w", "stop"], { stdio: "ignore" });
   }
   await rm(statusPath, { force: true });
+  await rm(smokeAppDataRoot, { force: true, recursive: true });
 }

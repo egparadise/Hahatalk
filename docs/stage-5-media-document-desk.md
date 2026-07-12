@@ -76,7 +76,7 @@ Content delivery is private/no-store, supports `206` byte ranges, sets `nosniff`
 
 The desktop static server allows authenticated image/media requests only to loopback API ports. `.mjs` files are served as JavaScript so the bundled PDF.js module worker can execute under `nosniff`. PDF bytes are fetched with the current HttpOnly session and passed to PDF.js as an `ArrayBuffer`; no public object URL or third-party document viewer is used.
 
-The installed renderer test uploads and shares an image, renders it through the authenticated endpoint, privately stores a PDF, checks a nonblank PDF canvas, opens the selected document in another Electron window, and verifies original/preview bytes under the private app object root.
+The installed renderer test uses a fresh temporary Electron user-data profile, claims the seed owner, uploads and shares an image, renders it through the authenticated endpoint, privately stores a PDF, checks a nonblank PDF canvas, opens the selected document in another Electron window, and verifies original/preview bytes under that isolated object root. The profile is removed after PostgreSQL and Electron stop, so test accounts and media cannot accumulate in the normal user database.
 
 ## Verification
 

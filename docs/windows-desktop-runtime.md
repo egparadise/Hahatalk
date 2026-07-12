@@ -71,6 +71,7 @@ apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe
 - normal window close removes the status file and closes the API and embedded database ports
 - installed executable runs from `%LOCALAPPDATA%/HahaTalk/app-<version>`
 - installed renderer uploads and previews an authenticated image, stores and renders a private PDF, opens it in a separate window, and writes originals/derivatives only under the private object root
+- renderer E2E sets `HAHATALK_USER_DATA_DIR` to a unique OS temporary profile, claims the seed owner there, and removes that profile after clean shutdown so automated accounts/media never enter the user's normal database
 - production dependency audit reports zero vulnerabilities
 
 ## Release Limitations

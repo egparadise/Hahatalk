@@ -6,6 +6,13 @@ const http = require("node:http");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
+const userDataOverride = process.env.HAHATALK_USER_DATA_DIR?.trim();
+if (userDataOverride) {
+  const resolvedUserData = path.resolve(userDataOverride);
+  fs.mkdirSync(resolvedUserData, { recursive: true });
+  app.setPath("userData", resolvedUserData);
+}
+
 const developmentWebUrl = process.env.HAHATALK_WEB_URL || "http://127.0.0.1:3000";
 const developmentApiUrl = process.env.HAHATALK_API_URL || "http://127.0.0.1:4000";
 const appUserModelId = "com.squirrel.HahaTalk.HahaTalk";
