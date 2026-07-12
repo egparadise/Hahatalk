@@ -42,6 +42,11 @@ export type ContactCollectionVisibility = "owner_only" | "shared";
 export type ContactRosterVisibility = "shared" | "owner_only";
 export type ContactConsentDecision = "granted" | "denied" | "revoked";
 export type ContactFollowUpState = "none" | "planned" | "waiting" | "completed";
+export type CalendarEventVisibility = "private" | "attendees" | "space";
+export type CalendarEventStatus = "scheduled" | "cancelled";
+export type CalendarResponseStatus = "needs_action" | "accepted" | "declined" | "tentative";
+export type CalendarRecurrenceFrequency = "daily" | "weekly" | "monthly";
+export type CalendarWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export interface Organization {
   id: string;
@@ -365,6 +370,135 @@ export interface ContactConsentResult {
   policyVersion: number;
   decision: ContactConsentDecision;
   decidedAt: string;
+}
+
+export interface CalendarRecurrence {
+  frequency: CalendarRecurrenceFrequency;
+  interval: number;
+  weekdays?: CalendarWeekday[];
+  count?: number;
+  untilLocalDate?: string;
+}
+
+export interface CalendarPerson {
+  id: string;
+  displayName: string;
+  role: MemberRole;
+  character: CharacterPreset;
+}
+
+export interface CalendarSpaceOption {
+  id: string;
+  title: string;
+  mode: RoomPresentationMode;
+  canInviteAll: boolean;
+  people: CalendarPerson[];
+}
+
+export interface CalendarContext {
+  defaultTimezone: string;
+  spaces: CalendarSpaceOption[];
+}
+
+export interface CalendarAttendeeView {
+  person: CalendarPerson;
+  response: CalendarResponseStatus;
+  respondedAt?: string;
+}
+
+export interface CalendarAttendeeCounts {
+  accepted: number;
+  declined: number;
+  needsAction: number;
+  tentative: number;
+}
+
+export interface CalendarEventView {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  visibility: CalendarEventVisibility;
+  status: CalendarEventStatus;
+  timezone: string;
+  startsLocal: string;
+  endsLocal: string;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  recurrence?: CalendarRecurrence;
+  version: number;
+  creator: CalendarPerson;
+  isCreator: boolean;
+  canEdit: boolean;
+  canCancel: boolean;
+  canRespond: boolean;
+  myResponse?: CalendarResponseStatus;
+  attendees?: CalendarAttendeeView[];
+  attendeeCounts?: CalendarAttendeeCounts;
+  reminderOffsetsMinutes?: number[];
+  space?: Pick<CalendarSpaceOption, "id" | "title" | "mode">;
+  cancellationReason?: string;
+  cancelledAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalendarOccurrenceView extends CalendarEventView {
+  occurrenceKey: string;
+  occurrenceStartsLocal: string;
+  occurrenceEndsLocal: string;
+  occurrenceStartsAt: string;
+  occurrenceEndsAt: string;
+}
+
+export interface CalendarReminderView {
+  reminderId: string;
+  eventId: string;
+  occurrenceKey: string;
+  occurrenceStartsAt: string;
+  triggerAt: string;
+  title: string;
+  creatorDisplayName: string;
+}
+
+export interface CalendarWindowView {
+  from: string;
+  to: string;
+  occurrences: CalendarOccurrenceView[];
+  reminders: CalendarReminderView[];
+}
+
+export interface CreateCalendarEventInput {
+  title: string;
+  description?: string;
+  location?: string;
+  visibility: CalendarEventVisibility;
+  spaceId?: string;
+  attendeeIds: string[];
+  startsLocal: string;
+  endsLocal: string;
+  timezone: string;
+  allDay: boolean;
+  recurrence?: CalendarRecurrence;
+  reminderOffsetsMinutes: number[];
+}
+
+export interface UpdateCalendarEventInput extends CreateCalendarEventInput {
+  version: number;
+}
+
+export interface CancelCalendarEventInput {
+  version: number;
+  reason?: string;
+}
+
+export interface RespondCalendarEventInput {
+  response: Exclude<CalendarResponseStatus, "needs_action">;
+}
+
+export interface DismissCalendarReminderInput {
+  occurrenceStartsAt: string;
 }
 
 export interface DeviceSessionView {

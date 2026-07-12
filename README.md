@@ -21,6 +21,7 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Owner-private family/team/customer/service/custom contact collections with private labels, notes, normalized tags, and follow-up state.
 - Exact-policy-version consent for shared family/team collections, viewer-safe rosters, revoke/re-consent, and append-only policy/audit history.
 - A PC contacts desk for collection/member management and restricted guest consent without exposing owner-private relationship data.
+- A timezone-safe PC calendar desk with private, selected, and exact current-room snapshot schedules, bounded recurrence, RSVP, reminders, optimistic edits, cancellation, and pop-out windows.
 - Internal and guest invite affordances with guest-safe permission labels.
 - Authenticated PDF.js, image, video, audio, and text previews without public storage URLs or third-party document viewers.
 - Durable screen capture archive/share flow for PC browsers/desktops that support `getDisplayMedia`.
@@ -53,6 +54,7 @@ npm run invitation:integration
 npm run conversation:integration
 npm run contacts:integration
 npm run media:integration
+npm run calendar:integration
 npm run desktop:renderer-smoke
 npm run harness
 ```
@@ -94,4 +96,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-3-persisted-conversations.md`: Stage 3 conversation schema, privacy projection, idempotency, outbox, API, and test contract.
 - `docs/stage-4-contacts-family-managed-groups.md`: Stage 4 relationship authorization, versioned consent, viewer projections, PC UX, and privacy harness.
 - `docs/stage-5-media-document-desk.md`: Stage 5 resumable upload, inspection, object storage, viewer grants, PDF/media UX, and verification contract.
+- `docs/stage-6a-schedule-rsvp-reminders.md`: Stage 6A timezone, recurrence, snapshot authorization, RSVP, reminders, calendar UX, and verification contract.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

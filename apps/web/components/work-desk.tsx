@@ -82,6 +82,7 @@ import {
 } from "@hahatalk/contracts";
 import { apiBaseUrl, fetchBinary, getJson, postJson, putBinary, requestJson } from "../lib/api-client";
 import { ContactsDesk } from "./contacts-desk";
+import { CalendarDesk } from "./calendar-desk";
 import { MediaPanel, type MediaUploadTaskView } from "./media-panel";
 import { PdfViewer } from "./pdf-viewer";
 
@@ -103,7 +104,11 @@ export function WorkDesk() {
   const [password, setPassword] = useState("");
   const [selectedCharacterId, setSelectedCharacterId] = useState(characterPresets[0]?.id ?? "");
   const [initialInviteCode, setInitialInviteCode] = useState("");
-  const [deskMode, setDeskMode] = useState<"chat" | "contacts">("chat");
+  const [deskMode, setDeskMode] = useState<"chat" | "contacts" | "calendar">(() => {
+    if (typeof window === "undefined") return "chat";
+    const requested = new URLSearchParams(window.location.search).get("desk");
+    return requested === "contacts" || requested === "calendar" ? requested : "chat";
+  });
   const selectedCharacter = characterPresets.find((character) => character.id === selectedCharacterId) ?? characterPresets[0]!;
 
   useEffect(() => {
@@ -225,7 +230,16 @@ export function WorkDesk() {
       authSession={authSession}
       currentUser={currentUser}
       onLogout={logout}
+      onOpenCalendar={() => setDeskMode("calendar")}
       onOpenChat={() => setDeskMode("chat")}
+    />
+  ) : deskMode === "calendar" ? (
+    <CalendarDesk
+      authSession={authSession}
+      currentUser={currentUser}
+      onLogout={logout}
+      onOpenChat={() => setDeskMode("chat")}
+      onOpenContacts={() => setDeskMode("contacts")}
     />
   ) : (
     <ChatDesk
@@ -233,6 +247,7 @@ export function WorkDesk() {
       currentUser={currentUser}
       initialInviteCode={initialInviteCode}
       onLogout={logout}
+      onOpenCalendar={() => setDeskMode("calendar")}
       onOpenContacts={() => setDeskMode("contacts")}
       users={users}
     />
@@ -591,6 +606,7 @@ function ChatDesk({
   currentUser,
   initialInviteCode,
   onLogout,
+  onOpenCalendar,
   onOpenContacts,
   users
 }: {
@@ -598,6 +614,7 @@ function ChatDesk({
   currentUser: User;
   initialInviteCode: string;
   onLogout: () => void;
+  onOpenCalendar: () => void;
   onOpenContacts: () => void;
   users: User[];
 }) {
@@ -1439,7 +1456,7 @@ function ChatDesk({
           <button className="rail-button" onClick={onOpenContacts} title="사람" type="button">
             <Users size={21} />
           </button>
-          <button className="rail-button" title="일정" type="button">
+          <button className="rail-button" onClick={onOpenCalendar} title="일정" type="button">
             <CalendarDays size={21} />
           </button>
           <button className="rail-button" title="파일" type="button">

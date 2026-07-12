@@ -39,6 +39,9 @@ const requiredTables = [
   "stickers",
   "message_reactions",
   "events",
+  "event_attendees",
+  "event_reminders",
+  "event_reminder_receipts",
   "call_sessions",
   "broadcast_channels",
   "avatar_profiles",
@@ -86,7 +89,10 @@ const requiredFragments = [
   "session_auth_version",
   "token_digest bytea",
   "bootstrap_claim_allowed",
-  "contact_collection_consents_effective_idx"
+  "contact_collection_consents_effective_idx",
+  "recurrence_ends_at",
+  "event_attendees_viewer_window_idx",
+  "occurrence_start_at"
 ];
 
 for (const fragment of requiredFragments) {
@@ -112,7 +118,8 @@ const governanceFiles = [
   "apps/api/migrations/002_invitation_consent_guest_approval.sql",
   "apps/api/migrations/003_persisted_conversation_core.sql",
   "apps/api/migrations/004_contacts_family_managed_groups.sql",
-  "apps/api/migrations/005_media_document_desk.sql"
+  "apps/api/migrations/005_media_document_desk.sql",
+  "apps/api/migrations/006_schedule_rsvp_reminders.sql"
 ];
 
 for (const file of governanceFiles) {

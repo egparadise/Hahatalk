@@ -80,7 +80,7 @@ Exit: fresh-DB and installed-Windows tests prove chat independence, resumable in
 
 ## Stage 6 - Schedule, Voice, And Video
 
-1. Event CRUD, recurrence, attendee RSVP, reminders.
+1. Event CRUD, bounded recurrence, exact-attendee snapshots, RSVP, reminders, and Windows calendar desk. Complete.
 2. LiveKit token service and ad-hoc voice/video calls.
 3. Scheduled meeting lobby and participant roles.
 4. Screen sharing, device controls, background blur/image.

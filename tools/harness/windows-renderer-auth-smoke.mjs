@@ -323,6 +323,10 @@ const mediaScreenshotPath = path.resolve(argument(
   "media-screenshot",
   path.join(process.cwd(), "apps", "desktop", "out", "stage5-media-document-desk.png")
 ));
+const calendarScreenshotPath = path.resolve(argument(
+  "calendar-screenshot",
+  path.join(process.cwd(), "apps", "desktop", "out", "stage6-calendar-desk.png")
+));
 const password = process.env.HAHATALK_SMOKE_PASSWORD ?? "HahaTalk!Stage2";
 const guestEmail = `renderer-guest-${Date.now()}@example.test`;
 const guestPassword = "Stage2B!RendererGuest";
@@ -802,6 +806,108 @@ try {
     popoutCdp.close();
   }
 
+  const calendarMarker = `Stage 6A renderer ${Date.now()}`;
+  const calendarEditedMarker = `${calendarMarker} updated`;
+  await evaluate(cdp, `document.querySelector('button[title="일정"]').click()`);
+  await waitForExpression(
+    cdp,
+    `Boolean(document.querySelector('.calendar-grid')) && document.querySelectorAll('.calendar-day').length === 42`,
+    "Installed calendar month grid did not render."
+  );
+  await evaluate(cdp, `
+    [...document.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('새 일정')).click()
+  `);
+  await waitForExpression(cdp, `Boolean(document.querySelector('form.calendar-form'))`, "Installed calendar editor did not open.");
+  await evaluate(cdp, `
+    (() => {
+      const titleLabel = [...document.querySelectorAll('form.calendar-form label')]
+        .find((label) => label.textContent.trim().startsWith('제목'));
+      const input = titleLabel.querySelector('input');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(calendarMarker)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('form.calendar-form').requestSubmit();
+    })()
+  `);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.calendar-event-pill')].some((button) => button.innerText.includes(${JSON.stringify(calendarMarker)}))`,
+    "Installed renderer did not create and show a private calendar event."
+  );
+  const calendarLayout = await evaluate(cdp, `
+    (() => {
+      const board = document.querySelector('.calendar-board');
+      const grid = document.querySelector('.calendar-grid');
+      const cells = [...document.querySelectorAll('.calendar-day')].map((cell) => cell.getBoundingClientRect());
+      const firstRow = cells.slice(0, 7);
+      const columnWidths = firstRow.map((cell) => Math.round(cell.width));
+      return {
+        boardFits: board.scrollWidth <= board.clientWidth + 1 && board.scrollHeight <= board.clientHeight + 1,
+        cellCount: cells.length,
+        gridVisible: grid.getBoundingClientRect().height > 300,
+        widthSpread: Math.max(...columnWidths) - Math.min(...columnWidths)
+      };
+    })()
+  `);
+  assert(calendarLayout.cellCount === 42 && calendarLayout.gridVisible, "Installed calendar grid dimensions are invalid.");
+  assert(calendarLayout.boardFits && calendarLayout.widthSpread <= 2, "Installed calendar grid overflows or has unstable columns.");
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.calendar-event-pill')]
+      .find((button) => button.innerText.includes(${JSON.stringify(calendarMarker)})).click()
+  `);
+  await waitForExpression(cdp, `document.querySelector('.calendar-detail h3')?.textContent === ${JSON.stringify(calendarMarker)}`, "Installed calendar detail did not open.");
+  await evaluate(cdp, `document.querySelector('.calendar-detail-actions .primary-button').click()`);
+  await waitForExpression(cdp, `Boolean(document.querySelector('form.calendar-form'))`, "Installed calendar edit form did not open.");
+  await evaluate(cdp, `
+    (() => {
+      const titleLabel = [...document.querySelectorAll('form.calendar-form label')]
+        .find((label) => label.textContent.trim().startsWith('제목'));
+      const input = titleLabel.querySelector('input');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(calendarEditedMarker)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('form.calendar-form').requestSubmit();
+    })()
+  `);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.calendar-event-pill')].some((button) => button.innerText.includes(${JSON.stringify(calendarEditedMarker)}))`,
+    "Installed renderer did not persist the calendar event edit."
+  );
+  await captureScreenshot(cdp, calendarScreenshotPath, "Installed calendar desk screenshot is unexpectedly small.");
+
+  await evaluate(cdp, `document.querySelector('button[title="일정 별도 창"]').click()`);
+  const calendarPopoutTarget = await waitForAdditionalTarget(debugPort, target.id);
+  const calendarPopoutCdp = await connectCdp(calendarPopoutTarget.webSocketDebuggerUrl);
+  try {
+    await calendarPopoutCdp.send("Page.enable");
+    await calendarPopoutCdp.send("Runtime.enable");
+    await waitForExpression(
+      calendarPopoutCdp,
+      `location.search.includes('desk=calendar') && document.querySelectorAll('.calendar-day').length === 42`,
+      "Calendar pop-out did not preserve the calendar desk."
+    );
+    await calendarPopoutCdp.send("Page.close").catch(() => evaluate(calendarPopoutCdp, "window.close()"));
+  } finally {
+    calendarPopoutCdp.close();
+  }
+
+  await evaluate(cdp, `
+    (() => {
+      window.confirm = () => true;
+      const eventButton = [...document.querySelectorAll('.calendar-event-pill')]
+        .find((button) => button.innerText.includes(${JSON.stringify(calendarEditedMarker)}));
+      eventButton.click();
+      return true;
+    })()
+  `);
+  await waitForExpression(cdp, `document.querySelector('.calendar-detail h3')?.textContent === ${JSON.stringify(calendarEditedMarker)}`, "Edited calendar detail did not reopen.");
+  await evaluate(cdp, `document.querySelector('.calendar-detail-actions .danger-button').click()`);
+  await waitForExpression(cdp, `document.querySelector('.calendar-detail-heading')?.innerText.includes('취소됨')`, "Installed renderer did not cancel the calendar event.");
+
   await logoutRenderer(cdp, "Guest renderer logout did not return to login.");
   await Promise.race([
     cdp.send("Browser.close").catch(() => undefined),
@@ -824,7 +930,7 @@ try {
   assert(statusRemoved, "HahaTalk runtime status remained after renderer smoke shutdown.");
   assert(!isProcessRunning(application.pid), "HahaTalk process remained after renderer smoke shutdown.");
   assert(!(await isPortOpen(runtime.databasePort)), "Embedded PostgreSQL remained reachable after renderer smoke shutdown.");
-  console.log(`Windows renderer invitation, contacts, and media check passed: ${runtime.version}, owner ${screenshotPath}, guest ${guestScreenshotPath}, contacts ${contactsOwnerScreenshotPath}, member ${contactsMemberScreenshotPath}, media ${mediaScreenshotPath}`);
+  console.log(`Windows renderer invitation, contacts, media, and calendar check passed: ${runtime.version}, owner ${screenshotPath}, guest ${guestScreenshotPath}, contacts ${contactsOwnerScreenshotPath}, member ${contactsMemberScreenshotPath}, media ${mediaScreenshotPath}, calendar ${calendarScreenshotPath}`);
 } finally {
   if (isProcessRunning(application.pid)) {
     await Promise.race([

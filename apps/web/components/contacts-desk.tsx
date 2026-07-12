@@ -40,6 +40,7 @@ type ContactsDeskProps = {
   authSession: AuthSession;
   currentUser: User;
   onLogout: () => void;
+  onOpenCalendar: () => void;
   onOpenChat: () => void;
 };
 
@@ -58,7 +59,7 @@ const consentLabels: Record<"pending" | ContactConsentDecision, string> = {
   revoked: "철회"
 };
 
-export function ContactsDesk({ authSession, currentUser, onLogout, onOpenChat }: ContactsDeskProps) {
+export function ContactsDesk({ authSession, currentUser, onLogout, onOpenCalendar, onOpenChat }: ContactsDeskProps) {
   const [dashboard, setDashboard] = useState<ContactsDashboard | null>(null);
   const [selection, setSelection] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -203,7 +204,7 @@ export function ContactsDesk({ authSession, currentUser, onLogout, onOpenChat }:
           <button className="rail-button" data-active="true" title="사람" type="button">
             <Users size={21} />
           </button>
-          <button className="rail-button" title="일정" type="button">
+          <button className="rail-button" onClick={onOpenCalendar} title="일정" type="button">
             <CalendarDays size={21} />
           </button>
           <button className="rail-button" title="파일" type="button">
