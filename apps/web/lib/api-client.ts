@@ -51,6 +51,41 @@ export async function getJson<TResponse>(path: string): Promise<TResponse> {
   return response.json() as Promise<TResponse>;
 }
 
+export async function putBinary<TResponse>(
+  path: string,
+  content: Blob,
+  sha256Hex: string,
+  signal?: AbortSignal
+): Promise<TResponse> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    body: content,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-HahaTalk-Client": "web-v1",
+      "X-HahaTalk-Part-Sha256": sha256Hex
+    },
+    method: "PUT",
+    ...(signal ? { signal } : {})
+  });
+  if (!response.ok) throw new Error(await readApiError(response));
+  return response.json() as Promise<TResponse>;
+}
+
+export async function fetchBinary(path: string, signal?: AbortSignal) {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    credentials: "include",
+    ...(signal ? { signal } : {})
+  });
+  if (!response.ok) throw new Error(await readApiError(response));
+  return response;
+}
+
+export function resolveApiUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function readApiError(response: Response) {
   try {
     const body = await response.json() as { message?: string | string[]; error?: string };

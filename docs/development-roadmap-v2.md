@@ -68,15 +68,15 @@ Exit: fresh-DB and installed-Windows tests prove private collection non-disclosu
 
 ## Stage 5 - Media And Document Desk
 
-1. Signed multipart upload to MinIO/S3.
-2. Virus scan and MIME verification.
-3. EXIF date/time/timezone/place extraction and GPS-safe derivatives.
-4. Private archive versus shared/selected grants.
-5. Album grouping by date/place and owner-centered timeline.
-6. PDF.js, image, video, audio, and office-file preview adapters.
-7. Desktop capture and pop-out panels.
+1. Resumable object-store upload, part/final SHA-256, restart recovery, abort, and idempotent completion. Complete.
+2. MIME/extension/magic-byte validation, bounded scanning, quarantine, and production ClamAV boundary. Complete for standalone baseline; production adapter deferred.
+3. EXIF date/time/timezone/GPS extraction and GPS-stripped shared image derivatives. Complete.
+4. Private archive versus exact shared/selected grants with immediate revoke. Complete.
+5. Indexed date/place owner timeline and manual albums. Complete.
+6. Authenticated PDF.js, image, video, audio, text, and local Office fallback adapters. Complete.
+7. Durable desktop capture and selected-document pop-out panels. Complete.
 
-Exit: uploads never block text chat; revoked shares disappear; private originals remain owned; date/place filters are indexed.
+Exit: fresh-DB and installed-Windows tests prove chat independence, resumable integrity, quarantine, hub-safe recipient grants, guest policy, immediate revoke with retained owner original, ranged delivery, indexed filters, albums, PDF canvas rendering, private app storage, and independent document windows. Complete.
 
 ## Stage 6 - Schedule, Voice, And Video
 

@@ -9,7 +9,7 @@
 - `packages/contracts`: shared viewer-safe domain contracts.
 - PostgreSQL: relational state and metadata.
 - Redis: presence, rate limits, queues, and Socket.IO scale-out.
-- S3-compatible object storage: file, photo, video, audio, recording, avatar, and generated media bytes. The pinned MinIO image is local-development-only while the active provider is reevaluated.
+- Object storage provider: the packaged Windows baseline uses a private per-user filesystem root; managed deployments will use the same contract with S3-compatible storage. The pinned MinIO image is local-development-only.
 - LiveKit: voice, video, screen sharing, webinar, and broadcast media.
 - Python workers: Whisper-compatible STT, Qwen 3.5+ assistant jobs, Qwen3-TTS, summaries, and avatar processing.
 - Remote support control plane: HahaTalk consent/audit orchestration with a separately sandboxed Windows support agent.
@@ -47,14 +47,14 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Exact-Origin and custom-header checks on state-changing browser requests.
 - PostgreSQL-backed `POST /messages`, reply/edit/delete/search, keyset pagination, and read/confirmation state.
 - Atomic idempotency records and one-recipient transactional outbox events, published to authenticated user-specific Socket.IO rooms.
-- `POST /attachments` remains a temporary metadata demo until the Stage 5 object-storage pipeline.
+- Authenticated `/media` resumable upload, integrity/MIME inspection, owner archive, exact viewer grants, revoke, albums, metadata, and ranged content delivery.
 - PostgreSQL-backed `/invitations` create/list/preview/accept/decline/decision/revoke state machine.
 - PostgreSQL-backed `/auth/sessions` list and session-revoke controls.
 - PostgreSQL-backed owner-private contact collections, relationship notes/tags/follow-up, immutable sharing policies, and append-only exact-version consent.
 - Viewer-specific `/contacts` owner, pending-request, and consented-shared projections plus the PC contacts management desk.
 - Delivery-based visibility and read confirmation through `POST /messages/:messageId/confirm`.
 - Authenticated user-specific Socket.IO rooms instead of hub-wide message broadcast.
-- File/photo/PDF/video metadata previews and PC capture path.
+- Authenticated PDF.js/image/video/audio/text previews, durable PC capture, and independent document/media windows.
 - Repo-local AGENTS, Skill, Agents, Hooks, schema validation, and harness loop.
 
 ## Production Boundaries Still Required
@@ -62,7 +62,7 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Replace demo account claiming with invitation/email verification, passkeys or enterprise SSO, device-session management, and rate limiting.
 - Move the single-process outbox publisher to a leased multi-replica worker before horizontal API scaling.
 - Add Redis presence without exposing hub participants to one another.
-- Add signed multipart upload, virus scanning, metadata extraction, and media derivatives.
+- Add the managed S3 adapter, production ClamAV service, retention policy, OCR/Office conversion, and video/audio derivative workers.
 - Add LiveKit token service, E2EE key policy, call state, and consented recording.
 - Add AI worker services; chat must never await them.
 - Add a support-agent security review before remote control code is enabled.

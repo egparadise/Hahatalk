@@ -10,7 +10,8 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - One-time invitation codes whose SHA-256 digests, expiry, use count, approval snapshot, invitee decision, and audit events persist in PostgreSQL.
 - Owner/admin/all-member/quorum approval policies, guest acceptance with terms/privacy/group consent, and manager revoke.
 - Device-session list, single-session revoke, revoke-other-sessions, and rate-limited login/invitation endpoints.
-- Attachment metadata preview remains a temporary demo boundary until Stage 5 object storage is connected.
+- Resumable file/photo/PDF/video/audio upload with per-part and final SHA-256 verification, MIME/signature checks, quarantine, and restart recovery.
+- Owner-private media archive, exact conversation grants, guest download policy, immediate share revoke, date/place filters, and albums.
 - API-backed confirmation action for important read-report messages.
 - Hub owner chat with `All`, `Selected`, and `Private` audience modes.
 - Participant-safe projection that presents the same hub as a normal 1:1 owner conversation.
@@ -21,8 +22,8 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Exact-policy-version consent for shared family/team collections, viewer-safe rosters, revoke/re-consent, and append-only policy/audit history.
 - A PC contacts desk for collection/member management and restricted guest consent without exposing owner-private relationship data.
 - Internal and guest invite affordances with guest-safe permission labels.
-- File/photo/PDF/video metadata previews.
-- Screen capture share flow for PC browsers/desktops that support `getDisplayMedia`.
+- Authenticated PDF.js, image, video, audio, and text previews without public storage URLs or third-party document viewers.
+- Durable screen capture archive/share flow for PC browsers/desktops that support `getDisplayMedia`.
 - Read report panel with read time, unread users, and confirmation state.
 - Pop-out window affordances for chat and document views.
 - Async AI/STT/TTS placeholders that do not block chat.
@@ -51,6 +52,8 @@ npm run auth:integration
 npm run invitation:integration
 npm run conversation:integration
 npm run contacts:integration
+npm run media:integration
+npm run desktop:renderer-smoke
 npm run harness
 ```
 
@@ -90,4 +93,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-2b-invitations-consent.md`: Stage 2B invitation state machine, guest approval, consent evidence, API, and tests.
 - `docs/stage-3-persisted-conversations.md`: Stage 3 conversation schema, privacy projection, idempotency, outbox, API, and test contract.
 - `docs/stage-4-contacts-family-managed-groups.md`: Stage 4 relationship authorization, versioned consent, viewer projections, PC UX, and privacy harness.
+- `docs/stage-5-media-document-desk.md`: Stage 5 resumable upload, inspection, object storage, viewer grants, PDF/media UX, and verification contract.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

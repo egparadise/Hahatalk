@@ -15,7 +15,7 @@ HahaTalk.exe
  -> sandboxed renderer with context-isolated preload bridge
 ```
 
-The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJS API is bundled from TypeScript output so decorator metadata remains intact. Generated assets, immutable SQL migrations, PostgreSQL `bin/lib/share`, and the Windows Argon2 native runtime are copied to `resources/runtime` outside `app.asar`; source code, pgAdmin, headers, and unrelated development dependencies are not copied.
+The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJS API is bundled from TypeScript output so decorator metadata remains intact. Generated assets, immutable SQL migrations, PostgreSQL `bin/lib/share`, and the Windows Argon2 native runtime are copied to `resources/runtime` outside `app.asar`; source code, pgAdmin, headers, and unrelated development dependencies are not copied. User file bytes are stored separately under `%APPDATA%/HahaTalk/objects`, never in the install directory or static web root.
 
 ## Startup Sequence
 
@@ -36,6 +36,7 @@ The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJ
 - Navigation is compared by parsed URL origin; unknown HTTP(S) or mail links open in the system browser.
 - The local static server binds only to `127.0.0.1` and prevents path traversal.
 - Static responses include CSP, `nosniff`, no-referrer, and frame-deny headers.
+- CSP permits image/audio/video bytes only from the loopback API origin; `.mjs` is served as JavaScript for the same-origin PDF.js worker.
 - Camera, microphone, fullscreen, and display capture permissions are limited to runtime origins.
 - Screen capture requires a user gesture and a local source-selection dialog.
 - The API is isolated from the renderer in Electron `utilityProcess`.
@@ -69,13 +70,15 @@ apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe
 - second executable invocation exits and leaves one main window
 - normal window close removes the status file and closes the API and embedded database ports
 - installed executable runs from `%LOCALAPPDATA%/HahaTalk/app-<version>`
+- installed renderer uploads and previews an authenticated image, stores and renders a private PDF, opens it in a separate window, and writes originals/derivatives only under the private object root
 - production dependency audit reports zero vulnerabilities
 
 ## Release Limitations
 
 - The current installer is unsigned. Windows code signing is required before external distribution to avoid trust warnings and to support a production update channel.
-- Accounts, sessions, invitations, consent evidence, conversations, deliveries, read state, idempotency, and outbox events persist in embedded PostgreSQL. Binary attachment storage remains a Stage 5 boundary.
-- Runtime manifest version 4 records every immutable SQL migration and SHA-256 fingerprints for `pg_ctl.exe` and `initdb.exe`.
+- Accounts, sessions, invitations, consent evidence, conversations, deliveries, read state, idempotency, outbox events, and media metadata persist in embedded PostgreSQL. Binary media persists in the private per-user object root.
+- Runtime manifest version 5 records every immutable SQL migration and SHA-256 fingerprints for `pg_ctl.exe` and `initdb.exe`.
+- Managed S3 and production ClamAV remain deployment boundaries; the packaged local provider and bounded standalone scanner are the verified PC baseline.
 - The embedded database is a PC-first single-device topology. Multi-device sync and horizontal scaling require the managed server deployment.
 - The installer currently targets Windows x64. ARM64 is a later build target.
 - Screen capture uses a name-based local selector; thumbnail selection and per-window consent history can be improved later.

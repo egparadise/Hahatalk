@@ -5,6 +5,7 @@ import { DatabaseModule } from "./database/database.module.js";
 import { InvitationModule } from "./invitations/invitation.module.js";
 import { ChatModule } from "./modules/chat.module.js";
 import { ContactsModule } from "./contacts/contacts.module.js";
+import { MediaModule } from "./media/media.module.js";
 
 @Module({
   imports: [
@@ -13,7 +14,8 @@ import { ContactsModule } from "./contacts/contacts.module.js";
     AuthModule,
     InvitationModule,
     ContactsModule,
-    ChatModule
+    ChatModule,
+    MediaModule
   ]
 })
 export class AppModule {}

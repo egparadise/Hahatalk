@@ -27,9 +27,15 @@ const requiredTables = [
   "messages",
   "message_audiences",
   "message_deliveries",
+  "media_upload_sessions",
+  "media_upload_parts",
   "media_assets",
-  "media_shares",
-  "albums",
+  "media_variants",
+  "message_attachments",
+  "media_grants",
+  "media_albums",
+  "media_album_items",
+  "media_processing_events",
   "stickers",
   "message_reactions",
   "events",
@@ -69,7 +75,10 @@ const requiredFragments = [
   "thread_key",
   "private_archive",
   "captured_at",
+  "captured_local_at",
   "place_name",
+  "expected_sha256_hex",
+  "media_grants_viewer_idx",
   "voice_profile",
   "remote_control",
   "outbox_events_unpublished_idx",
@@ -102,7 +111,8 @@ const governanceFiles = [
   "apps/api/migrations/001_auth_foundation.sql",
   "apps/api/migrations/002_invitation_consent_guest_approval.sql",
   "apps/api/migrations/003_persisted_conversation_core.sql",
-  "apps/api/migrations/004_contacts_family_managed_groups.sql"
+  "apps/api/migrations/004_contacts_family_managed_groups.sql",
+  "apps/api/migrations/005_media_document_desk.sql"
 ];
 
 for (const file of governanceFiles) {

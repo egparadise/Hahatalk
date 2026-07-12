@@ -1043,6 +1043,217 @@ button:disabled {
   max-height: 230px;
 }
 
+.composer-media-mode {
+  grid-template-columns: repeat(2, minmax(82px, 1fr));
+  width: 196px;
+}
+
+.composer-media-mode button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.media-upload-status,
+.media-library-list,
+.album-list {
+  display: grid;
+  gap: 8px;
+}
+
+.media-file-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-progress {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-strong);
+}
+
+.media-progress span {
+  display: block;
+  height: 100%;
+  background: var(--teal);
+  transition: width 160ms ease;
+}
+
+.spin {
+  animation: media-spin 900ms linear infinite;
+}
+
+@keyframes media-spin {
+  to { transform: rotate(360deg); }
+}
+
+.media-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.media-filter-grid .text-input,
+.media-inline-form .text-input,
+.panel-section > .field .text-input {
+  min-height: 38px;
+  padding: 8px 9px;
+}
+
+.media-scope-control {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.media-scope-control button {
+  min-height: 38px;
+  padding: 4px;
+  white-space: normal;
+}
+
+.media-search-button {
+  width: 100%;
+  justify-content: center;
+  margin: 8px 0 4px;
+}
+
+.media-library-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  padding: 7px 0;
+}
+
+.media-library-row[data-selected="true"] {
+  background: #eef9f7;
+}
+
+.media-library-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 4px;
+  text-align: left;
+}
+
+.media-library-main span,
+.album-row span {
+  min-width: 0;
+}
+
+.media-library-main strong,
+.media-library-main small,
+.album-row strong,
+.album-row small {
+  display: block;
+}
+
+.media-library-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-library-main small,
+.album-row small {
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.media-row-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.media-row-actions .icon-button {
+  width: 31px;
+  height: 31px;
+  min-height: 31px;
+}
+
+.media-inline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.album-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.audio-preview {
+  padding: 18px;
+}
+
+.audio-preview audio {
+  width: 100%;
+}
+
+.blocked-preview {
+  align-content: center;
+  gap: 7px;
+  color: #a53e34;
+}
+
+.text-preview {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  padding: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pdf-viewer {
+  position: relative;
+  min-height: 180px;
+}
+
+.pdf-canvas-list {
+  display: grid;
+  gap: 10px;
+}
+
+.pdf-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.preview-state {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
 .pdf-pages {
   display: grid;
   gap: 10px;

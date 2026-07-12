@@ -27,8 +27,13 @@ export type AiJobType =
   | "search_index"
   | "media_metadata";
 export type AiJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
-export type AttachmentPreviewStatus = "queued" | "ready" | "failed";
-export type VirusScanStatus = "pending" | "clean" | "blocked";
+export type AttachmentPreviewStatus = "queued" | "ready" | "unavailable" | "failed";
+export type VirusScanStatus = "pending" | "clean" | "blocked" | "failed";
+export type MediaArchiveScope = "private_archive" | "shared" | "selected";
+export type MediaKind = "image" | "video" | "audio" | "pdf" | "text" | "office" | "file";
+export type MediaProcessingStatus = "processing" | "ready" | "blocked" | "failed";
+export type MediaUploadSource = "file_upload" | "screen_capture";
+export type MediaUploadStatus = "initiated" | "uploading" | "completing" | "completed" | "aborted" | "expired" | "failed";
 export type ApprovalPolicy = "owner_and_invitee" | "admins_and_invitee" | "all_members_and_invitee" | "quorum_and_invitee";
 export type InvitationStatus = "pending_approval" | "sent" | "accepted" | "declined" | "expired" | "revoked";
 export type InvitationDecision = "approved" | "rejected";
@@ -132,18 +137,96 @@ export interface MessageDelivery {
 
 export interface Attachment {
   id: string;
+  assetId: string;
   messageId: string;
   uploaderId: string;
-  storageKey: string;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
-  thumbnailKey?: string;
+  mediaKind: MediaKind;
+  mediaVisibility: MediaArchiveScope;
   previewStatus: AttachmentPreviewStatus;
   virusScanStatus: VirusScanStatus;
-  versionGroupId?: string;
+  source: MediaUploadSource;
+  previewUrl?: string;
+  downloadUrl?: string;
+  canDownload: boolean;
+  capturedAt?: string;
+  capturedTimezone?: string;
+  placeName?: string;
   createdAt: string;
   objectUrl?: string;
+}
+
+export interface MediaAssetView {
+  id: string;
+  ownerId: string;
+  fileName: string;
+  mimeType: string;
+  mediaKind: MediaKind;
+  sizeBytes: number;
+  sha256Hex?: string;
+  archiveScope: MediaArchiveScope;
+  processingStatus: MediaProcessingStatus;
+  previewStatus: AttachmentPreviewStatus;
+  virusScanStatus: VirusScanStatus;
+  source: MediaUploadSource;
+  previewUrl?: string;
+  downloadUrl?: string;
+  canDownload: boolean;
+  capturedAt?: string;
+  capturedTimezone?: string;
+  placeName?: string;
+  createdAt: string;
+}
+
+export interface MediaUploadSessionView {
+  id: string;
+  clientUploadId: string;
+  fileName: string;
+  declaredMimeType: string;
+  sizeBytes: number;
+  partSizeBytes: number;
+  partCount: number;
+  uploadedPartNumbers: number[];
+  status: MediaUploadStatus;
+  expiresAt: string;
+  asset?: MediaAssetView;
+}
+
+export interface MediaAlbumView {
+  id: string;
+  name: string;
+  description: string;
+  assetIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MediaLibraryView {
+  assets: MediaAssetView[];
+  albums: MediaAlbumView[];
+  hasMore: boolean;
+  nextCursor?: string;
+}
+
+export interface InitiateMediaUploadInput {
+  clientUploadId: string;
+  fileName: string;
+  declaredMimeType: string;
+  sizeBytes: number;
+  sha256Hex?: string;
+  source: MediaUploadSource;
+}
+
+export interface ShareMediaAssetInput {
+  spaceId: string;
+  clientMessageId: string;
+  audienceType: AudienceType;
+  targetUserIds: string[];
+  targetRole?: MemberRole;
+  caption?: string;
+  archiveScope: Exclude<MediaArchiveScope, "private_archive">;
 }
 
 export interface Message {
@@ -999,14 +1082,18 @@ export const demoMessages: Message[] = [
     attachments: [
       {
         id: "att-proposal-pdf",
+        assetId: "asset-proposal-pdf",
         messageId: "msg-002",
         uploaderId: "user-mina",
-        storageKey: "demo/proposal-v1.pdf",
         fileName: "프로젝트A_제안서_v1.pdf",
         mimeType: "application/pdf",
+        mediaKind: "pdf",
+        mediaVisibility: "shared",
         sizeBytes: 428000,
         previewStatus: "ready",
         virusScanStatus: "clean",
+        source: "file_upload",
+        canDownload: true,
         createdAt: "2026-07-09T10:04:00+09:00"
       }
     ]

@@ -99,7 +99,7 @@ const manifest = {
     pgCtlSha256: await sha256(path.join(postgresRuntimeRoot, "bin", "pg_ctl.exe")),
     version: "18.4"
   },
-  runtimeVersion: 4
+  runtimeVersion: 5
 };
 await writeFile(path.join(runtimeRoot, "runtime-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 

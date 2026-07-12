@@ -13,6 +13,7 @@ import {
   findCharacterPreset,
   getRoomPresentationForViewer,
   projectMessageForViewer,
+  type Attachment,
   type AudienceType,
   type ConversationListItem,
   type ConversationView,
@@ -26,6 +27,7 @@ import {
   type Room,
   type RoomMember,
   type SendConversationMessageInput,
+  type ShareMediaAssetInput,
   type TypingUpdate,
   type User
 } from "@hahatalk/contracts";
@@ -105,7 +107,43 @@ type DeliveryRow = {
   thread_key: string;
 };
 
+type AttachmentRow = {
+  archive_scope: Attachment["mediaVisibility"];
+  asset_id: string;
+  can_download: boolean;
+  captured_at: Date | null;
+  captured_local_at: string | null;
+  captured_timezone: string | null;
+  created_at: Date;
+  detected_mime_type: string;
+  media_kind: Attachment["mediaKind"];
+  message_id: string;
+  original_file_name: string;
+  owner_id: string;
+  owner_public_id: string;
+  place_name: string | null;
+  preview_object_key: string | null;
+  preview_status: Attachment["previewStatus"];
+  processing_status: string;
+  size_bytes: string;
+  source: Attachment["source"];
+  virus_scan_status: Attachment["virusScanStatus"];
+};
+
 type TimelineRow = { created_at: Date; id: string };
+
+type ShareableAssetRow = {
+  archive_scope: "private_archive" | "shared" | "selected";
+  detected_mime_type: string;
+  id: string;
+  media_kind: "image" | "video" | "audio" | "pdf" | "text" | "office" | "file";
+  original_file_name: string;
+  owner_id: string;
+  preview_status: "queued" | "ready" | "unavailable" | "failed";
+  processing_status: "processing" | "ready" | "blocked" | "failed";
+  source: "file_upload" | "screen_capture";
+  virus_scan_status: "pending" | "clean" | "blocked" | "failed";
+};
 
 export type OutboxEventRow = {
   aggregate_id: string;
@@ -416,6 +454,182 @@ export class ConversationService {
     return { message, replay: result.replay };
   }
 
+  async sendMediaMessage(principal: AuthPrincipal, assetId: string, input: ShareMediaAssetInput) {
+    if (!isUuid(assetId) || !isUuid(input.spaceId)) {
+      throw new BadRequestException("Media asset or conversation id is invalid.");
+    }
+    if (input.clientMessageId.length < 8 || input.clientMessageId.length > 160) {
+      throw new BadRequestException("Client message id must be between 8 and 160 characters.");
+    }
+    const caption = input.caption?.trim() ?? "";
+    if (caption.length > 2_000) throw new BadRequestException("Media caption is too long.");
+    const normalizedTargets = [...new Set(input.targetUserIds)].sort();
+    const expectedScope = input.audienceType === "all" ? "shared" : "selected";
+    if (input.archiveScope !== expectedScope) {
+      throw new BadRequestException("Media share scope does not match its message audience.");
+    }
+    const requestHash = stableHash({
+      archiveScope: input.archiveScope,
+      assetId,
+      audienceType: input.audienceType,
+      caption,
+      spaceId: input.spaceId,
+      targetRole: input.targetRole ?? null,
+      targetUserIds: normalizedTargets
+    });
+
+    const result = await this.database.transaction(async (client) => {
+      const context = await this.spaceContext(client, input.spaceId, principal.state.user.organizationId);
+      this.assertMembership(context, principal);
+      if (!context.room.settings.fileSharingEnabled || !principal.state.permissions.canUploadFiles) {
+        throw new ForbiddenException("File sharing is disabled in this conversation.");
+      }
+      const assetResult = await client.query<ShareableAssetRow>(
+        `select id, owner_id, original_file_name, detected_mime_type, media_kind,
+                archive_scope, processing_status, preview_status, virus_scan_status, source
+         from media_assets
+         where id = $1 and organization_id = $2 and deleted_at is null
+         for update`,
+        [assetId, principal.state.user.organizationId]
+      );
+      const asset = assetResult.rows[0];
+      if (!asset || asset.owner_id !== principal.internalUserId) {
+        throw new NotFoundException("Owned media asset was not found.");
+      }
+      if (asset.processing_status !== "ready" || asset.virus_scan_status !== "clean") {
+        throw new ConflictException("Only a clean, completed media asset can be shared.");
+      }
+
+      const claimed = await client.query(
+        `insert into idempotency_keys (scope, key, owner_id, request_hash, expires_at)
+         values ('media.share', $1, $2, $3, now() + interval '30 days')
+         on conflict do nothing returning key`,
+        [input.clientMessageId, principal.internalUserId, requestHash]
+      );
+      if (!claimed.rowCount) {
+        const existing = await client.query<{ request_hash: string; response_json: { messageId?: string } | null }>(
+          `select request_hash, response_json from idempotency_keys
+           where scope = 'media.share' and key = $1 and owner_id = $2`,
+          [input.clientMessageId, principal.internalUserId]
+        );
+        const row = existing.rows[0];
+        if (!row || row.request_hash !== requestHash) {
+          throw new ConflictException("Idempotency key was already used for a different media share.");
+        }
+        if (!row.response_json?.messageId) {
+          throw new ConflictException("The original media share is still being processed.");
+        }
+        return { messageId: row.response_json.messageId, replay: true };
+      }
+
+      let plan;
+      try {
+        plan = createMessageDeliveryPlan(
+          context.room,
+          context.members,
+          "pending-media-message",
+          principal.state.user.id,
+          input.audienceType,
+          normalizedTargets,
+          new Date().toISOString(),
+          input.targetRole
+        );
+      } catch (error) {
+        throw new ForbiddenException(error instanceof Error ? error.message : "Media delivery is not allowed.");
+      }
+      if (plan.normalizedAudienceType !== "all" && plan.normalizedTargetUserIds.length === 0) {
+        throw new BadRequestException("At least one valid media recipient is required.");
+      }
+
+      const messageId = randomUUID();
+      const createdAt = new Date();
+      const messageType: Message["messageType"] = ["image", "video", "audio"].includes(asset.media_kind)
+        ? asset.media_kind as "image" | "video" | "audio"
+        : "file";
+      const body = caption || asset.original_file_name;
+      await client.query(
+        `insert into messages (
+           id, space_id, sender_id, client_message_id, message_type, delivery_mode,
+           body, metadata_json, created_at
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
+        [
+          messageId,
+          input.spaceId,
+          principal.internalUserId,
+          input.clientMessageId,
+          messageType,
+          plan.deliveryMode,
+          body,
+          JSON.stringify({ source: asset.source, mediaVisibility: input.archiveScope }),
+          createdAt
+        ]
+      );
+      await this.insertAudience(
+        client,
+        context,
+        messageId,
+        plan.normalizedAudienceType,
+        plan.normalizedTargetUserIds,
+        input.targetRole
+      );
+      await client.query(
+        `insert into message_attachments (message_id, asset_id, linked_by, caption)
+         values ($1, $2, $3, $4)`,
+        [messageId, assetId, principal.internalUserId, caption]
+      );
+      for (const delivery of plan.deliveries) {
+        const recipientInternalId = context.internalByPublic.get(delivery.recipientId);
+        if (!recipientInternalId) throw new BadRequestException("A media recipient is no longer active.");
+        const recipientRole = context.members.find((member) => member.userId === delivery.recipientId)?.role;
+        const canDownload = delivery.recipientId === principal.state.user.id
+          || !["guest", "subscriber"].includes(recipientRole ?? "guest")
+          || context.room.settings.guestCanDownload;
+        await client.query(
+          `insert into message_deliveries (
+             message_id, recipient_id, thread_key, status, delivered_at, read_at, created_at
+           ) values ($1, $2, $3, 'delivered', $4, $5, $4)`,
+          [
+            messageId,
+            recipientInternalId,
+            delivery.threadKey,
+            createdAt,
+            delivery.recipientId === principal.state.user.id ? createdAt : null
+          ]
+        );
+        await client.query(
+          `insert into media_grants (
+             asset_id, message_id, grantee_id, granted_by, can_preview, can_download
+           ) values ($1, $2, $3, $4, true, $5)`,
+          [assetId, messageId, recipientInternalId, principal.internalUserId, canDownload]
+        );
+        await this.insertOutbox(client, messageId, recipientInternalId, "conversation.message.created");
+      }
+      await client.query(
+        "update media_assets set archive_scope = $2, updated_at = now() where id = $1",
+        [assetId, input.archiveScope]
+      );
+      await client.query(
+        `update idempotency_keys
+         set response_json = jsonb_build_object('messageId', $4::text), status_code = 201
+         where scope = 'media.share' and key = $1 and owner_id = $2 and request_hash = $3`,
+        [input.clientMessageId, principal.internalUserId, requestHash, messageId]
+      );
+      await client.query("update conversation_spaces set updated_at = $2 where id = $1", [input.spaceId, createdAt]);
+      await client.query(
+        `insert into audit_logs (organization_id, actor_id, action, target_type, target_id, metadata_json)
+         values ($1, $2, 'media.share.created', 'media_asset', $3, $4::jsonb)`,
+        [
+          principal.state.user.organizationId,
+          principal.internalUserId,
+          assetId,
+          JSON.stringify({ audienceType: plan.normalizedAudienceType, messageId, recipientCount: String(plan.deliveries.length) })
+        ]
+      );
+      return { messageId, replay: false };
+    });
+    return { message: await this.messageForViewer(principal, result.messageId), replay: result.replay };
+  }
+
   async editMessage(principal: AuthPrincipal, messageId: string, nextBody: string) {
     const body = nextBody.trim();
     if (!body || body.length > 10_000) {
@@ -454,6 +668,70 @@ export class ConversationService {
       await client.query("update messages set deleted_at = $2 where id = $1", [messageId, deletedAt]);
       await this.enqueueExistingRecipients(client, messageId, "conversation.message.deleted", { deletedAt: deletedAt.toISOString() });
       return { id: messageId, deletedAt: deletedAt.toISOString() };
+    });
+  }
+
+  async revokeMediaShare(
+    principal: AuthPrincipal,
+    assetId: string,
+    messageId: string
+  ): Promise<MessageDeleteResult> {
+    return this.database.transaction(async (client) => {
+      await this.lockOwnedAsset(client, principal, assetId);
+      const result = await this.revokeMediaMessage(client, assetId, messageId);
+      const remaining = await client.query(
+        "select 1 from message_attachments where asset_id = $1 and revoked_at is null limit 1",
+        [assetId]
+      );
+      if (!remaining.rowCount) {
+        await client.query(
+          "update media_assets set archive_scope = 'private_archive', updated_at = now() where id = $1",
+          [assetId]
+        );
+      }
+      await client.query(
+        `insert into audit_logs (organization_id, actor_id, action, target_type, target_id, metadata_json)
+         values ($1, $2, 'media.share.revoked', 'media_asset', $3, $4::jsonb)`,
+        [
+          principal.state.user.organizationId,
+          principal.internalUserId,
+          assetId,
+          JSON.stringify({ messageId })
+        ]
+      );
+      return result;
+    });
+  }
+
+  async revokeAllMediaShares(principal: AuthPrincipal, assetId: string, trash: boolean) {
+    return this.database.transaction(async (client) => {
+      const asset = await this.lockOwnedAsset(client, principal, assetId);
+      const links = await client.query<{ message_id: string }>(
+        "select message_id from message_attachments where asset_id = $1 and revoked_at is null order by created_at",
+        [assetId]
+      );
+      for (const link of links.rows) {
+        await this.revokeMediaMessage(client, assetId, link.message_id);
+      }
+      await client.query(
+        `update media_assets
+         set archive_scope = 'private_archive', deleted_at = case when $2 then coalesce(deleted_at, now()) else deleted_at end,
+             updated_at = now()
+         where id = $1`,
+        [assetId, trash]
+      );
+      await client.query(
+        `insert into audit_logs (organization_id, actor_id, action, target_type, target_id, metadata_json)
+         values ($1, $2, $3, 'media_asset', $4, $5::jsonb)`,
+        [
+          principal.state.user.organizationId,
+          principal.internalUserId,
+          trash ? "media.asset.trashed" : "media.share.all_revoked",
+          assetId,
+          JSON.stringify({ shareCount: String(links.rows.length), wasDeleted: String(Boolean(asset.deleted_at)) })
+        ]
+      );
+      return { ok: true };
     });
   }
 
@@ -815,6 +1093,32 @@ export class ConversationService {
        order by d.created_at, d.id`,
       [messageIds]
     );
+    const viewerInternalId = context.internalByPublic.get(viewerPublicId);
+    if (!viewerInternalId) return [];
+    const attachmentsResult = await client.query<AttachmentRow>(
+      `select attachment.message_id, asset.id as asset_id, asset.owner_id,
+              owner.public_id as owner_public_id, asset.original_file_name,
+              asset.detected_mime_type, asset.media_kind, asset.size_bytes,
+              asset.archive_scope, asset.preview_status, asset.virus_scan_status,
+              asset.processing_status, asset.source, asset.captured_at,
+               to_char(asset.captured_local_at, 'YYYY-MM-DD"T"HH24:MI:SS') as captured_local_at,
+               asset.captured_timezone, asset.place_name,
+              asset.created_at, variant.object_key as preview_object_key,
+              (asset.owner_id = $2 or coalesce(bool_or(media_grant.can_download), false)) as can_download
+       from message_attachments attachment
+       join media_assets asset on asset.id = attachment.asset_id and asset.deleted_at is null
+       join users owner on owner.id = asset.owner_id
+       left join media_variants variant
+         on variant.asset_id = asset.id and variant.variant_kind = 'shared_preview'
+       left join media_grants media_grant
+         on media_grant.asset_id = asset.id and media_grant.message_id = attachment.message_id
+        and media_grant.grantee_id = $2 and media_grant.revoked_at is null
+       where attachment.message_id = any($1::uuid[]) and attachment.revoked_at is null
+         and (asset.owner_id = $2 or media_grant.id is not null)
+       group by attachment.message_id, asset.id, owner.public_id, variant.object_key
+       order by attachment.message_id, min(attachment.position), asset.created_at, asset.id`,
+      [messageIds, viewerInternalId]
+    );
     const audiencesByMessage = new Map<string, MessageAudience[]>();
     for (const row of audiencesResult.rows) {
       const audience: MessageAudience = {
@@ -841,11 +1145,42 @@ export class ConversationService {
       };
       deliveriesByMessage.set(row.message_id, [...(deliveriesByMessage.get(row.message_id) ?? []), delivery]);
     }
+    const attachmentsByMessage = new Map<string, Attachment[]>();
+    for (const row of attachmentsResult.rows) {
+      const owner = row.owner_id === viewerInternalId;
+      const ready = row.processing_status === "ready" && row.virus_scan_status === "clean";
+      const previewAvailable = owner
+        ? ready && ["image", "pdf", "video", "audio", "text"].includes(row.media_kind)
+        : ready && row.preview_status === "ready" && (row.media_kind !== "image" || Boolean(row.preview_object_key));
+      const capturedLocal = row.captured_local_at ?? undefined;
+      const attachment: Attachment = {
+        assetId: row.asset_id,
+        canDownload: row.can_download,
+        createdAt: row.created_at.toISOString(),
+        fileName: row.original_file_name,
+        id: `${row.message_id}:${row.asset_id}`,
+        mediaKind: row.media_kind,
+        mediaVisibility: row.archive_scope,
+        messageId: row.message_id,
+        mimeType: row.detected_mime_type,
+        previewStatus: row.preview_status,
+        sizeBytes: Number(row.size_bytes),
+        source: row.source,
+        uploaderId: row.owner_public_id,
+        virusScanStatus: row.virus_scan_status,
+        ...(owner && row.captured_at ? { capturedAt: row.captured_at.toISOString() } : owner && capturedLocal ? { capturedAt: capturedLocal } : {}),
+        ...(owner && row.captured_timezone ? { capturedTimezone: row.captured_timezone } : {}),
+        ...(owner && row.place_name ? { placeName: row.place_name } : {}),
+        ...(previewAvailable ? { previewUrl: `/media/assets/${row.asset_id}/content?variant=${owner ? "original" : "preview"}` } : {}),
+        ...(ready && row.can_download ? { downloadUrl: `/media/assets/${row.asset_id}/content?variant=original&download=1` } : {})
+      };
+      attachmentsByMessage.set(row.message_id, [...(attachmentsByMessage.get(row.message_id) ?? []), attachment]);
+    }
     const viewerMembership = context.members.find((member) => member.userId === viewerPublicId);
     return messagesResult.rows
       .map((row): Message | undefined => {
         const message: Message = {
-          attachments: [],
+          attachments: attachmentsByMessage.get(row.id) ?? [],
           audiences: audiencesByMessage.get(row.id) ?? [],
           body: row.body,
           createdAt: row.created_at.toISOString(),
@@ -963,5 +1298,53 @@ export class ConversationService {
       throw new NotFoundException("Message was not found.");
     }
     return result.rows[0];
+  }
+
+  private async lockOwnedAsset(client: PoolClient, principal: AuthPrincipal, assetId: string) {
+    const result = await client.query<{ deleted_at: Date | null; owner_id: string }>(
+      "select owner_id, deleted_at from media_assets where id = $1 and organization_id = $2 for update",
+      [assetId, principal.state.user.organizationId]
+    );
+    const asset = result.rows[0];
+    if (!asset || asset.owner_id !== principal.internalUserId) {
+      throw new NotFoundException("Owned media asset was not found.");
+    }
+    return asset;
+  }
+
+  private async revokeMediaMessage(client: PoolClient, assetId: string, messageId: string): Promise<MessageDeleteResult> {
+    const link = await client.query<{ deleted_at: Date | null; revoked_at: Date | null }>(
+      `select message.deleted_at, attachment.revoked_at
+       from message_attachments attachment
+       join messages message on message.id = attachment.message_id
+       where attachment.asset_id = $1 and attachment.message_id = $2
+       for update of attachment, message`,
+      [assetId, messageId]
+    );
+    const row = link.rows[0];
+    if (!row) throw new NotFoundException("Media share was not found.");
+    const deletedAt = row.deleted_at ?? row.revoked_at ?? new Date();
+    if (!row.revoked_at) {
+      await this.enqueueExistingRecipients(client, messageId, "conversation.message.deleted", {
+        deletedAt: deletedAt.toISOString()
+      });
+      await client.query(
+        "update message_attachments set revoked_at = $3 where asset_id = $1 and message_id = $2",
+        [assetId, messageId, deletedAt]
+      );
+      await client.query(
+        `update media_grants set revoked_at = $3, revoke_reason = 'owner_revoked'
+         where asset_id = $1 and message_id = $2 and revoked_at is null`,
+        [assetId, messageId, deletedAt]
+      );
+      await client.query(
+        `update message_deliveries
+         set status = 'revoked', revoked_at = $2
+         where message_id = $1 and revoked_at is null`,
+        [messageId, deletedAt]
+      );
+      await client.query("update messages set deleted_at = coalesce(deleted_at, $2) where id = $1", [messageId, deletedAt]);
+    }
+    return { id: messageId, deletedAt: deletedAt.toISOString() };
   }
 }

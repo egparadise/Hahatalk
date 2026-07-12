@@ -3,9 +3,7 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
-  Inject,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -14,7 +12,6 @@ import {
 } from "@nestjs/common";
 import {
   type AudienceType,
-  type CreateAttachmentMessageInput,
   type MemberRole,
   type SendConversationMessageInput
 } from "@hahatalk/contracts";
@@ -22,19 +19,16 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
-  Min,
   MinLength
 } from "class-validator";
 import { CurrentAuth, PublicRoute } from "../auth/auth.decorators.js";
 import type { AuthPrincipal } from "../auth/auth.types.js";
 import { DatabaseService } from "../database/database.service.js";
 import { ConversationService } from "./conversation.service.js";
-import { DemoStore } from "./demo-store.js";
 
 class SendMessageDto {
   @IsUUID()
@@ -76,42 +70,10 @@ class EditMessageDto {
   body = "";
 }
 
-class CreateAttachmentMessageDto {
-  @IsString()
-  @MinLength(1)
-  fileName = "";
-
-  @IsString()
-  mimeType = "application/octet-stream";
-
-  @IsNumber()
-  @Min(1)
-  sizeBytes = 0;
-
-  @IsIn(["all", "selected", "private", "role"])
-  audienceType: AudienceType = "all";
-
-  @IsArray()
-  @IsString({ each: true })
-  targetUserIds: string[] = [];
-
-  @IsOptional()
-  @IsIn(["owner", "admin", "member", "guest", "subscriber"])
-  targetRole?: MemberRole;
-
-  @IsIn(["file_upload", "screen_capture"])
-  source: "file_upload" | "screen_capture" = "file_upload";
-
-  @IsOptional()
-  @IsIn(["private_archive", "shared", "selected"])
-  mediaVisibility?: "private_archive" | "shared" | "selected";
-}
-
 @Controller()
 export class ChatController {
   constructor(
     private readonly conversations: ConversationService,
-    @Inject(DemoStore) private readonly store: DemoStore,
     private readonly database: DatabaseService
   ) {}
 
@@ -215,16 +177,6 @@ export class ChatController {
     @CurrentAuth() principal: AuthPrincipal
   ) {
     return this.conversations.markRead(principal, messageId, true);
-  }
-
-  @Post("attachments")
-  createAttachmentMessage(@Body() body: CreateAttachmentMessageDto, @CurrentAuth() principal: AuthPrincipal) {
-    if (!principal.state.permissions.canUploadFiles) {
-      throw new ForbiddenException("File upload permission is required.");
-    }
-    this.store.ensureUser(principal.state.user, principal.state.role);
-    const uploaderId = principal.state.user.id;
-    return this.store.createAttachmentMessage({ ...body, uploaderId } as CreateAttachmentMessageInput);
   }
 
   private parseLimit(rawLimit?: string) {

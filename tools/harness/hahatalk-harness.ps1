@@ -67,6 +67,7 @@ Invoke-CheckedCommand -Command @("npm", "run", "auth:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "invitation:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "conversation:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "contacts:integration")
+Invoke-CheckedCommand -Command @("npm", "run", "media:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
 
 $verificationDir = Join-Path $root "node_modules\.cache"

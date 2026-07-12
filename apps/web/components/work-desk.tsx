@@ -9,6 +9,7 @@ import {
   Copy,
   FileText,
   FolderOpen,
+  HardDrive,
   Image as ImageIcon,
   Inbox,
   KeyRound,
@@ -27,6 +28,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Share2,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -67,19 +69,27 @@ import {
   type Message,
   type MessageDeleteResult,
   type MembershipInvitationView,
+  type MediaArchiveScope,
+  type MediaAssetView,
+  type MediaLibraryView,
+  type MediaUploadSessionView,
+  type MediaUploadSource,
   type MvpSnapshot,
   type RoomMember,
   type RoomPresentation,
   type TypingUpdate,
   type User
 } from "@hahatalk/contracts";
-import { apiBaseUrl, getJson, postJson, requestJson } from "../lib/api-client";
+import { apiBaseUrl, fetchBinary, getJson, postJson, putBinary, requestJson } from "../lib/api-client";
 import { ContactsDesk } from "./contacts-desk";
+import { MediaPanel, type MediaUploadTaskView } from "./media-panel";
+import { PdfViewer } from "./pdf-viewer";
 
 type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
 type ReadReportRow = ReturnType<typeof buildReadReport>[number];
 type AuthMode = "activate" | "login" | "invitation";
 type CredentialAuthMode = Exclude<AuthMode, "invitation">;
+type MediaMode = "archive" | "share";
 
 const reactions = ["확인", "완료", "질문", "긴급", "감사"];
 export function WorkDesk() {
@@ -611,7 +621,13 @@ function ChatDesk({
   const [aiJobs, setAiJobs] = useState<AiJob[]>(demoAiJobs);
   const [invitations, setInvitations] = useState<MembershipInvitationView[]>([]);
   const [sessions, setSessions] = useState<DeviceSessionView[]>([]);
-  const [activePanel, setActivePanel] = useState<PanelKey>("files");
+  const [activePanel, setActivePanel] = useState<PanelKey>(() => {
+    if (typeof window === "undefined") return "files";
+    const panel = new URLSearchParams(window.location.search).get("panel");
+    return (["files", "pdf", "reads", "members", "ai"] as PanelKey[]).includes(panel as PanelKey)
+      ? panel as PanelKey
+      : "files";
+  });
   const [selectedMessageId, setSelectedMessageId] = useState("");
   const [audienceType, setAudienceType] = useState<AudienceType>("all");
   const [targetUserIds, setTargetUserIds] = useState<string[]>(["user-mina"]);
@@ -641,18 +657,40 @@ function ChatDesk({
   const [isInvitationAction, setIsInvitationAction] = useState(false);
   const [isSessionAction, setIsSessionAction] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [mediaMode, setMediaMode] = useState<MediaMode>("share");
+  const [mediaLibrary, setMediaLibrary] = useState<MediaLibraryView>({ albums: [], assets: [], hasMore: false });
+  const [selectedAssetId, setSelectedAssetId] = useState(() => (
+    typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("asset") ?? ""
+  ));
+  const [mediaDateFilter, setMediaDateFilter] = useState("");
+  const [mediaPlaceFilter, setMediaPlaceFilter] = useState("");
+  const [mediaScopeFilter, setMediaScopeFilter] = useState<"" | MediaArchiveScope>("");
+  const [mediaPlaceDraft, setMediaPlaceDraft] = useState("");
+  const [mediaCapturedDraft, setMediaCapturedDraft] = useState("");
+  const [albumName, setAlbumName] = useState("");
+  const [selectedAlbumId, setSelectedAlbumId] = useState("");
+  const [uploadTask, setUploadTask] = useState<MediaUploadTaskView>({ fileName: "", progress: 0, status: "idle" });
+  const [retryUpload, setRetryUpload] = useState<{ file: File; source: MediaUploadSource } | null>(null);
   const [isConfirmingRead, setIsConfirmingRead] = useState(false);
   const [readReportRows, setReadReportRows] = useState<ReadReportRow[] | undefined>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const socketRef = useRef<Socket | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+  const uploadIdRef = useRef("");
   const activeSpaceIdRef = useRef(activeSpaceId);
   const readPendingIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     activeSpaceIdRef.current = activeSpaceId;
   }, [activeSpaceId]);
+
+  useEffect(() => {
+    const selected = mediaLibrary.assets.find((asset) => asset.id === selectedAssetId);
+    setMediaPlaceDraft(selected?.placeName ?? "");
+    setMediaCapturedDraft(selected?.capturedAt?.slice(0, 19) ?? "");
+  }, [mediaLibrary.assets, selectedAssetId]);
 
   useEffect(() => {
     void refreshSnapshot();
@@ -675,6 +713,7 @@ function ChatDesk({
         setMessages((current) => upsertMessage(current, message));
       }
       void refreshSpaceList();
+      void refreshMediaLibrary();
     };
     socket.on("message:created", applyMessage);
     socket.on("message:updated", applyMessage);
@@ -683,6 +722,7 @@ function ChatDesk({
       setMessages((current) => current.filter((message) => message.id !== deleted.id));
       setSelectedMessageId((current) => current === deleted.id ? "" : current);
       void refreshSpaceList();
+      void refreshMediaLibrary();
     });
     socket.on("typing:updated", (update: TypingUpdate) => {
       if (update.spaceId !== activeSpaceIdRef.current || update.userId === currentUser.id) {
@@ -716,7 +756,15 @@ function ChatDesk({
   const visibleMessages = messages;
   const selectedMessage = messages.find((message) => message.id === selectedMessageId) ?? visibleMessages.at(-1);
   const attachments = messages.flatMap((message) => message.attachments.map((attachment) => ({ attachment, message })));
-  const selectedPdf = attachments.find(({ attachment }) => attachment.mimeType === "application/pdf")?.attachment;
+  const selectedMediaAsset = mediaLibrary.assets.find((asset) => asset.id === selectedAssetId);
+  const selectedAttachment = attachments.find(({ attachment }) => attachment.assetId === selectedAssetId)?.attachment
+    ?? selectedMessage?.attachments[0]
+    ?? attachments.at(-1)?.attachment;
+  const selectedPdf = selectedMediaAsset?.mimeType === "application/pdf"
+    ? selectedMediaAsset
+    : selectedAttachment?.mimeType === "application/pdf"
+    ? selectedAttachment
+    : attachments.find(({ attachment }) => attachment.mimeType === "application/pdf")?.attachment;
   const replyToMessage = messages.find((message) => message.id === replyToId);
 
   const targetUsers = roomUsers.filter((user) => user.id !== currentUser.id);
@@ -775,21 +823,39 @@ function ChatDesk({
     }
   }
 
+  async function refreshMediaLibrary() {
+    const parameters = new URLSearchParams();
+    if (mediaDateFilter) parameters.set("date", mediaDateFilter);
+    if (mediaPlaceFilter.trim()) parameters.set("place", mediaPlaceFilter.trim());
+    if (mediaScopeFilter) parameters.set("scope", mediaScopeFilter);
+    const query = parameters.toString();
+    try {
+      const library = await getJson<MediaLibraryView>(`/media/library${query ? `?${query}` : ""}`);
+      setMediaLibrary(library);
+      if (!selectedAssetId && library.assets[0]) setSelectedAssetId(library.assets[0].id);
+    } catch (error) {
+      setNotice(`미디어 보관함 동기화 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
   async function refreshSnapshot() {
     setIsSyncing(true);
     setSyncError("");
 
     try {
-      const [snapshot, invitationRows, sessionRows] = await Promise.all([
+      const [snapshot, invitationRows, sessionRows, library] = await Promise.all([
         getJson<MvpSnapshot>(`/mvp?spaceId=${encodeURIComponent(activeSpaceIdRef.current)}`),
         getJson<MembershipInvitationView[]>("/invitations"),
-        getJson<DeviceSessionView[]>("/auth/sessions")
+        getJson<DeviceSessionView[]>("/auth/sessions"),
+        getJson<MediaLibraryView>("/media/library")
       ]);
       applyConversationView(snapshot);
       setSpaces(snapshot.spaces ?? []);
       setAiJobs(snapshot.aiJobs);
       setInvitations(invitationRows);
       setSessions(sessionRows);
+      setMediaLibrary(library);
+      if (library.assets[0]) setSelectedAssetId((current) => current || library.assets[0]!.id);
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : "업무방 동기화 실패");
     } finally {
@@ -1127,92 +1193,12 @@ function ChatDesk({
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    const id = `msg-file-${Date.now()}`;
-    const now = new Date().toISOString();
-    const effectiveAudience = getEffectiveAudience();
-    const deliveryPlan = createMessageDeliveryPlan(
-      demoRoom,
-      roomMembers,
-      id,
-      currentUser.id,
-      effectiveAudience.audienceType,
-      effectiveAudience.targetUserIds,
-      now
-    );
-    const objectUrl = URL.createObjectURL(file);
-    const attachment: Attachment = {
-      id: `att-${Date.now()}`,
-      messageId: id,
-      uploaderId: currentUser.id,
-      storageKey: `local-demo/${file.name}`,
-      fileName: file.name,
-      mimeType: file.type || "application/octet-stream",
-      sizeBytes: file.size,
-      previewStatus: "ready",
-      virusScanStatus: "clean",
-      createdAt: now,
-      objectUrl
-    };
-    const messageType = file.type.startsWith("image/")
-      ? "image"
-      : file.type.startsWith("video/")
-        ? "video"
-        : "file";
-    const message: Message = {
-      id,
-      roomId: demoRoom.id,
-      senderId: currentUser.id,
-      messageType,
-      deliveryMode: deliveryPlan.deliveryMode,
-      body: `${file.name} 공유`,
-      metadata: { source: "file_upload", mediaVisibility: "shared" },
-      createdAt: now,
-      audiences: createMessageAudience(
-        id,
-        deliveryPlan.normalizedAudienceType,
-        currentUser.id,
-        deliveryPlan.normalizedTargetUserIds
-      ),
-      deliveries: deliveryPlan.deliveries,
-      attachments: [attachment]
-    };
-
-    setMessages((current) => [...current, message]);
-    setSelectedMessageId(message.id);
-    setActivePanel(file.type === "application/pdf" ? "pdf" : "files");
     event.target.value = "";
-
-    setIsUploading(true);
-    try {
-      const savedMessage = await postJson<Message>("/attachments", {
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-        audienceType: effectiveAudience.audienceType,
-        targetUserIds: effectiveAudience.targetUserIds,
-        source: "file_upload",
-        mediaVisibility: "shared"
-      });
-      const messageWithPreview = attachPreviewUrl(savedMessage, objectUrl);
-
-      setMessages((current) => current.map((candidate) => candidate.id === message.id ? messageWithPreview : candidate));
-      setSelectedMessageId(savedMessage.id);
-      setNotice(`${file.name} 메타데이터가 서버에 저장되었습니다.`);
-    } catch (error) {
-      URL.revokeObjectURL(objectUrl);
-      setMessages((current) => current.filter((candidate) => candidate.id !== message.id));
-      setNotice(`파일 메타데이터 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
-    } finally {
-      setIsUploading(false);
-    }
+    if (file) await uploadMedia(file, "file_upload");
   }
 
   async function shareScreenCapture() {
+    let stream: MediaStream | undefined;
     try {
       const mediaDevices = navigator.mediaDevices as MediaDevices & {
         getDisplayMedia?: (constraints?: DisplayMediaStreamOptions) => Promise<MediaStream>;
@@ -1223,7 +1209,7 @@ function ChatDesk({
         return;
       }
 
-      const stream = await mediaDevices.getDisplayMedia({ video: true });
+      stream = await mediaDevices.getDisplayMedia({ video: true });
       const video = document.createElement("video");
       video.srcObject = stream;
       await video.play();
@@ -1234,90 +1220,212 @@ function ChatDesk({
       canvas.height = video.videoHeight || 720;
       canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-      stream.getTracks().forEach((track) => track.stop());
+      if (!blob) throw new Error("화면 캡처 이미지를 만들지 못했습니다.");
+      const timestamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
+      await uploadMedia(new File([blob], `화면캡처_${timestamp}.png`, { type: "image/png" }), "screen_capture");
+    } catch (error) {
+      setNotice(error instanceof Error && error.message.includes("만들지") ? error.message : "화면 캡처 공유가 취소되었습니다.");
+    } finally {
+      stream?.getTracks().forEach((track) => track.stop());
+    }
+  }
 
-      if (!blob) {
-        setNotice("화면 캡처 이미지를 만들지 못했습니다.");
+  async function uploadMedia(file: File, source: MediaUploadSource) {
+    if (isUploading) return;
+    const controller = new AbortController();
+    const effectiveAudience = getEffectiveAudience();
+    uploadAbortRef.current = controller;
+    uploadIdRef.current = "";
+    setRetryUpload({ file, source });
+    setIsUploading(true);
+    setUploadTask({ fileName: file.name, progress: 0, status: "hashing" });
+    setActivePanel("files");
+    try {
+      const sha256Hex = await sha256Blob(file);
+      if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
+      const session = await postJson<MediaUploadSessionView>("/media/uploads", {
+        clientUploadId: `upload-${crypto.randomUUID()}`,
+        declaredMimeType: file.type || "application/octet-stream",
+        fileName: file.name,
+        sha256Hex,
+        sizeBytes: file.size,
+        source
+      });
+      uploadIdRef.current = session.id;
+      setUploadTask({ fileName: file.name, progress: 0, status: "uploading" });
+      for (let index = 0; index < session.partCount; index += 1) {
+        const partNumber = index + 1;
+        const part = file.slice(index * session.partSizeBytes, Math.min(file.size, partNumber * session.partSizeBytes));
+        const partHash = await sha256Blob(part);
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          try {
+            await putBinary(`/media/uploads/${session.id}/parts/${partNumber}`, part, partHash, controller.signal);
+            lastError = undefined;
+            break;
+          } catch (error) {
+            lastError = error;
+            if (controller.signal.aborted || attempt === 3) break;
+            await wait(250 * attempt);
+          }
+        }
+        if (lastError) throw lastError;
+        setUploadTask({ fileName: file.name, progress: Math.round((partNumber / session.partCount) * 90), status: "uploading" });
+      }
+      setUploadTask({ fileName: file.name, progress: 94, status: "processing" });
+      const asset = await postJson<MediaAssetView>(`/media/uploads/${session.id}/complete`, { sha256Hex });
+      setSelectedAssetId(asset.id);
+      await refreshMediaLibrary();
+      if (asset.processingStatus !== "ready") {
+        setUploadTask({ fileName: file.name, progress: 100, status: "done" });
+        setNotice(`${file.name} 파일은 보안 검사에서 격리되었습니다.`);
         return;
       }
-
-      const id = `msg-capture-${Date.now()}`;
-      const now = new Date().toISOString();
-      const effectiveAudience = getEffectiveAudience();
-      const deliveryPlan = createMessageDeliveryPlan(
-        demoRoom,
-        roomMembers,
-        id,
-        currentUser.id,
-        effectiveAudience.audienceType,
-        effectiveAudience.targetUserIds,
-        now
-      );
-      const attachment: Attachment = {
-        id: `att-capture-${Date.now()}`,
-        messageId: id,
-        uploaderId: currentUser.id,
-        storageKey: `local-demo/screen-${Date.now()}.png`,
-        fileName: "화면캡처.png",
-        mimeType: "image/png",
-        sizeBytes: blob.size,
-        previewStatus: "ready",
-        virusScanStatus: "clean",
-        createdAt: now,
-        objectUrl: URL.createObjectURL(blob)
-      };
-      const message: Message = {
-        id,
-        roomId: demoRoom.id,
-        senderId: currentUser.id,
-        messageType: "image",
-        deliveryMode: deliveryPlan.deliveryMode,
-        body: "현재 화면 캡처 공유",
-        metadata: { source: "screen_capture", mediaVisibility: "shared" },
-        createdAt: now,
-        audiences: createMessageAudience(
-          id,
-          deliveryPlan.normalizedAudienceType,
-          currentUser.id,
-          deliveryPlan.normalizedTargetUserIds
-        ),
-        deliveries: deliveryPlan.deliveries,
-        attachments: [attachment]
-      };
-
-      setMessages((current) => [...current, message]);
-      setSelectedMessageId(message.id);
-      setActivePanel("files");
-      setIsUploading(true);
-      try {
-        const savedMessage = await postJson<Message>("/attachments", {
-          fileName: "화면캡처.png",
-          mimeType: "image/png",
-          sizeBytes: blob.size,
+      if (mediaMode === "share") {
+        const result = await postJson<{ message: Message; replay: boolean }>(`/media/assets/${asset.id}/share`, {
+          archiveScope: effectiveAudience.audienceType === "all" ? "shared" : "selected",
           audienceType: effectiveAudience.audienceType,
-          targetUserIds: effectiveAudience.targetUserIds,
-          source: "screen_capture",
-          mediaVisibility: "shared"
+          caption: source === "screen_capture" ? "현재 화면 캡처 공유" : `${file.name} 공유`,
+          clientMessageId: `media-share-${crypto.randomUUID()}`,
+          spaceId: activeSpaceId,
+          targetUserIds: effectiveAudience.targetUserIds
         });
-        const messageWithPreview = attachPreviewUrl(savedMessage, attachment.objectUrl!);
-
-        setMessages((current) => current.map((candidate) => candidate.id === message.id ? messageWithPreview : candidate));
-        setSelectedMessageId(savedMessage.id);
-        setNotice("화면 캡처 메타데이터가 서버에 저장되었습니다.");
-      } catch (error) {
-        URL.revokeObjectURL(attachment.objectUrl!);
-        setMessages((current) => current.filter((candidate) => candidate.id !== message.id));
-        setNotice(`화면 캡처 메타데이터 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
-      } finally {
-        setIsUploading(false);
+        setMessages((current) => upsertMessage(current, result.message));
+        setSelectedMessageId(result.message.id);
+        setNotice(`${file.name} 파일을 현재 대상으로 공유했습니다.`);
+      } else {
+        setNotice(`${file.name} 파일을 내 보관함에 저장했습니다.`);
       }
-    } catch {
-      setNotice("화면 캡처 공유가 취소되었습니다.");
+      setUploadTask({ fileName: file.name, progress: 100, status: "done" });
+      if (file.type === "application/pdf") setActivePanel("pdf");
+      await refreshMediaLibrary();
+    } catch (error) {
+      const aborted = controller.signal.aborted;
+      setUploadTask({
+        error: aborted ? "업로드를 취소했습니다." : error instanceof Error ? error.message : "알 수 없는 오류",
+        fileName: file.name,
+        progress: 0,
+        status: aborted ? "idle" : "failed"
+      });
+      setNotice(aborted ? "파일 업로드를 취소했습니다." : `파일 업로드 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      uploadAbortRef.current = null;
+      uploadIdRef.current = "";
+      setIsUploading(false);
+    }
+  }
+
+  async function abortMediaUpload() {
+    setUploadTask((current) => ({ ...current, status: "aborting" }));
+    uploadAbortRef.current?.abort();
+    const uploadId = uploadIdRef.current;
+    if (uploadId) await requestJson(`/media/uploads/${uploadId}`, "DELETE").catch(() => undefined);
+  }
+
+  async function retryMediaUpload() {
+    if (retryUpload) await uploadMedia(retryUpload.file, retryUpload.source);
+  }
+
+  async function shareStoredAsset(asset: MediaAssetView) {
+    const effectiveAudience = getEffectiveAudience();
+    try {
+      const result = await postJson<{ message: Message; replay: boolean }>(`/media/assets/${asset.id}/share`, {
+        archiveScope: effectiveAudience.audienceType === "all" ? "shared" : "selected",
+        audienceType: effectiveAudience.audienceType,
+        caption: `${asset.fileName} 공유`,
+        clientMessageId: `media-share-${crypto.randomUUID()}`,
+        spaceId: activeSpaceId,
+        targetUserIds: effectiveAudience.targetUserIds
+      });
+      setMessages((current) => upsertMessage(current, result.message));
+      setSelectedMessageId(result.message.id);
+      setNotice(`${asset.fileName} 파일을 현재 대상으로 공유했습니다.`);
+      await refreshMediaLibrary();
+    } catch (error) {
+      setNotice(`파일 공유 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
+  async function revokeMediaShare(assetId: string, messageId: string) {
+    try {
+      await requestJson(`/media/assets/${assetId}/shares/${messageId}`, "DELETE");
+      setMessages((current) => current.filter((message) => message.id !== messageId));
+      setNotice("공유를 철회했습니다. 내 보관 원본은 유지됩니다.");
+      await refreshMediaLibrary();
+    } catch (error) {
+      setNotice(`공유 철회 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
+  async function trashMediaAsset(assetId: string) {
+    try {
+      await requestJson(`/media/assets/${assetId}`, "DELETE");
+      setSelectedAssetId("");
+      setNotice("파일을 휴지통으로 이동하고 기존 공유를 철회했습니다.");
+      await refreshMediaLibrary();
+    } catch (error) {
+      setNotice(`파일 삭제 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
+  async function downloadMedia(media: { downloadUrl?: string; fileName: string }) {
+    if (!media.downloadUrl) return;
+    try {
+      const response = await fetchBinary(media.downloadUrl);
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = media.fileName;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+    } catch (error) {
+      setNotice(`다운로드 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
+  async function saveMediaMetadata() {
+    if (!selectedAssetId) return;
+    try {
+      const asset = await requestJson<MediaAssetView>(`/media/assets/${selectedAssetId}`, "PATCH", {
+        capturedLocalAt: mediaCapturedDraft || undefined,
+        placeName: mediaPlaceDraft
+      });
+      setMediaLibrary((current) => ({ ...current, assets: current.assets.map((item) => item.id === asset.id ? asset : item) }));
+      setNotice("촬영 시각과 장소를 저장했습니다.");
+    } catch (error) {
+      setNotice(`미디어 정보 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
+  async function createMediaAlbum() {
+    if (!albumName.trim()) return;
+    try {
+      const album = await postJson<MediaLibraryView["albums"][number]>("/media/albums", { name: albumName.trim() });
+      setMediaLibrary((current) => ({ ...current, albums: [album, ...current.albums] }));
+      setSelectedAlbumId(album.id);
+      setAlbumName("");
+      setNotice("앨범을 만들었습니다.");
+    } catch (error) {
+      setNotice(`앨범 만들기 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
+  async function addMediaToAlbum(albumId: string, assetId: string) {
+    if (!albumId || !assetId) return;
+    try {
+      const album = await postJson<MediaLibraryView["albums"][number]>(`/media/albums/${albumId}/items`, { assetId });
+      setMediaLibrary((current) => ({ ...current, albums: current.albums.map((item) => item.id === album.id ? album : item) }));
+      setNotice("선택한 파일을 앨범에 추가했습니다.");
+    } catch (error) {
+      setNotice(`앨범 추가 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
     }
   }
 
   function popOut() {
-    window.open(window.location.href, "hahatalk-popout", "width=980,height=760");
+    const url = new URL(window.location.href);
+    url.searchParams.set("panel", activePanel);
+    if (selectedAssetId) url.searchParams.set("asset", selectedAssetId);
+    window.open(url.toString(), `hahatalk-${activePanel}-${Date.now()}`, "width=1320,height=840");
   }
 
   return (
@@ -1501,7 +1609,10 @@ function ChatDesk({
                         <button
                           className="attachment-tile"
                           key={attachment.id}
-                          onClick={() => setActivePanel(attachment.mimeType === "application/pdf" ? "pdf" : "files")}
+                          onClick={() => {
+                            setSelectedAssetId(attachment.assetId);
+                            setActivePanel(attachment.mimeType === "application/pdf" ? "pdf" : "files");
+                          }}
                           type="button"
                         >
                           {attachment.mimeType.startsWith("image/") ? <ImageIcon size={21} /> : <FileText size={21} />}
@@ -1595,10 +1706,14 @@ function ChatDesk({
             </div>
           ) : null}
           <div className="composer-tools">
-            <button className="icon-button" disabled={isUploading} onClick={() => setNotice("파일 원본 영속 저장은 Stage 5에서 활성화됩니다.")} title="파일 첨부" type="button">
+            <div className="segmented-control composer-media-mode" aria-label="파일 처리 방식">
+              <button data-active={mediaMode === "archive"} onClick={() => setMediaMode("archive")} type="button"><HardDrive size={14} /> 내 보관</button>
+              <button data-active={mediaMode === "share"} onClick={() => setMediaMode("share")} type="button"><Share2 size={14} /> 대상 공유</button>
+            </div>
+            <button className="icon-button" disabled={isUploading} onClick={() => fileInputRef.current?.click()} title="파일 첨부" type="button">
               <Paperclip size={18} />
             </button>
-            <button className="icon-button" disabled={isUploading} onClick={() => setNotice("화면 캡처 영속 공유는 Stage 5에서 활성화됩니다.")} title="화면 캡처 공유" type="button">
+            <button className="icon-button" disabled={isUploading} onClick={() => void shareScreenCapture()} title="화면 캡처" type="button">
               <Camera size={18} />
             </button>
             <button className="icon-button" onClick={() => setNotice("STT 음성메시지는 AI 작업 대기열로 들어갑니다.")} title="STT" type="button">
@@ -1639,7 +1754,7 @@ function ChatDesk({
             onChange={handleFileChange}
             ref={fileInputRef}
             type="file"
-            accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/ogg,audio/mp4,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.json"
           />
         </footer>
       </section>
@@ -1681,7 +1796,42 @@ function ChatDesk({
           </button>
         </div>
         <div className="panel-content">
-          <PanelBody
+          {activePanel === "files" ? (
+            <MediaPanel
+              albumName={albumName}
+              attachments={attachments.map((item) => item.attachment)}
+              capturedDraft={mediaCapturedDraft}
+              currentUserId={currentUser.id}
+              dateFilter={mediaDateFilter}
+              isUploading={isUploading}
+              library={mediaLibrary}
+              onAbortUpload={() => void abortMediaUpload()}
+              onAddToAlbum={(albumId, assetId) => void addMediaToAlbum(albumId, assetId)}
+              onAlbumNameChange={setAlbumName}
+              onCapturedDraftChange={setMediaCapturedDraft}
+              onCreateAlbum={() => void createMediaAlbum()}
+              onDateFilterChange={setMediaDateFilter}
+              onDownload={(media) => void downloadMedia(media)}
+              onPlaceDraftChange={setMediaPlaceDraft}
+              onPlaceFilterChange={setMediaPlaceFilter}
+              onRefresh={() => void refreshMediaLibrary()}
+              onRetryUpload={() => void retryMediaUpload()}
+              onRevokeShare={(assetId, messageId) => void revokeMediaShare(assetId, messageId)}
+              onSaveMetadata={() => void saveMediaMetadata()}
+              onScopeFilterChange={setMediaScopeFilter}
+              onSelectAlbum={setSelectedAlbumId}
+              onSelectAsset={setSelectedAssetId}
+              onShareAsset={(asset) => void shareStoredAsset(asset)}
+              onTrashAsset={(assetId) => void trashMediaAsset(assetId)}
+              placeDraft={mediaPlaceDraft}
+              placeFilter={mediaPlaceFilter}
+              scopeFilter={mediaScopeFilter}
+              selectedAlbumId={selectedAlbumId}
+              selectedAssetId={selectedAssetId}
+              uploadTask={uploadTask}
+            />
+          ) : (
+            <PanelBody
             activePanel={activePanel}
             acceptExistingGroupJoin={acceptExistingGroupJoin}
             acceptExistingPrivacy={acceptExistingPrivacy}
@@ -1724,7 +1874,8 @@ function ChatDesk({
             sessions={sessions}
             users={roomUsers}
             aiJobs={aiJobs}
-          />
+            />
+          )}
         </div>
       </aside>
     </main>
@@ -1813,7 +1964,7 @@ function PanelBody({
   readReportRows: ReadReportRow[] | undefined;
   roomMembers: RoomMember[];
   selectedMessage: Message | undefined;
-  selectedPdf: Attachment | undefined;
+  selectedPdf: Attachment | MediaAssetView | undefined;
   sessions: DeviceSessionView[];
   users: User[];
   aiJobs: AiJob[];
@@ -2115,33 +2266,19 @@ function AttachmentPreview({ attachment }: { attachment: Attachment | undefined 
   );
 }
 
-function PdfPanel({ pdf }: { pdf: Attachment | undefined }) {
+function PdfPanel({ pdf }: { pdf: Attachment | MediaAssetView | undefined }) {
   return (
     <>
       <div className="panel-section">
         <h2 className="panel-title">
           <FileText size={17} /> PDF 문서
         </h2>
-        <strong>{pdf?.fileName ?? "프로젝트A_제안서_v1.pdf"}</strong>
-        <p className="panel-muted">PDF.js 뷰어 연결 지점입니다. 업로드 PDF는 객체 URL로 표시하고, 서버 저장본은 서명 URL로 교체합니다.</p>
+        <strong className="pdf-file-name">{pdf?.fileName ?? "PDF를 선택하세요"}</strong>
       </div>
-      {pdf?.objectUrl ? (
-        <iframe className="file-preview" src={pdf.objectUrl} title={pdf.fileName} />
+      {pdf?.previewUrl ? (
+        <PdfViewer fileName={pdf.fileName} url={pdf.previewUrl} />
       ) : (
-        <div className="pdf-pages">
-          <div className="pdf-page">
-            <strong>프로젝트 A 제안서</strong>
-            <div className="pdf-page-line" />
-            <div className="pdf-page-line" />
-            <div className="pdf-page-line" />
-          </div>
-          <div className="pdf-page">
-            <strong>범위와 일정</strong>
-            <div className="pdf-page-line" />
-            <div className="pdf-page-line" />
-            <div className="pdf-page-line" />
-          </div>
-        </div>
+        <div className="file-preview panel-muted">현재 대화에서 PDF를 선택하세요.</div>
       )}
     </>
   );
@@ -2329,11 +2466,13 @@ function mergeCurrentMembership(
   return memberships.map((candidate, index) => index === existingIndex ? { ...candidate, ...membership } : candidate);
 }
 
-function attachPreviewUrl(message: Message, objectUrl: string): Message {
-  return {
-    ...message,
-    attachments: message.attachments.map((attachment, index) => index === 0 ? { ...attachment, objectUrl } : attachment)
-  };
+async function sha256Blob(blob: Blob) {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function upsertMessage(messages: Message[], message: Message) {

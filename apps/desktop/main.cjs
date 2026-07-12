@@ -19,6 +19,7 @@ const mimeTypes = {
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".map": "application/json; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
@@ -154,10 +155,10 @@ function setStaticHeaders(response) {
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    "img-src 'self' data: blob: http://127.0.0.1:*",
     "font-src 'self' data:",
     "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*",
-    "media-src 'self' blob:",
+    "media-src 'self' blob: http://127.0.0.1:*",
     "worker-src 'self' blob:",
     "frame-src 'self' blob:",
     "object-src 'none'",
@@ -410,6 +411,7 @@ async function startPackagedApi(apiEntryPath, webOrigin, databaseUrl) {
         ...process.env,
         DATABASE_URL: databaseUrl,
         HAHATALK_MIGRATIONS_DIR: path.join(path.dirname(apiEntryPath), "migrations"),
+        HAHATALK_OBJECT_ROOT: path.join(app.getPath("userData"), "objects"),
         NODE_ENV: "production",
         PORT: String(port),
         SESSION_COOKIE_NAME: "hahatalk_desktop_session",
@@ -485,7 +487,7 @@ function openExternalUrl(value) {
   }
 }
 
-function createWindow() {
+function createWindow(initialUrl = runtime.webUrl) {
   const workArea = screen.getPrimaryDisplay().workAreaSize;
   const width = Math.min(1440, workArea.width);
   const height = Math.min(920, workArea.height);
@@ -541,14 +543,14 @@ function createWindow() {
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedInternalUrl(url) || url === "about:blank") {
-      createWindow();
+      createWindow(isAllowedInternalUrl(url) ? url : runtime.webUrl);
     } else {
       openExternalUrl(url);
     }
     return { action: "deny" };
   });
 
-  void win.loadURL(runtime.webUrl).catch((error) => {
+  void win.loadURL(initialUrl).catch((error) => {
     appendRuntimeLog(`Renderer load failed: ${error instanceof Error ? error.message : String(error)}`);
     dialog.showErrorBox("HahaTalk 화면 오류", "화면을 불러오지 못했습니다. 앱을 다시 실행해 주세요.");
   });

@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { access, readFile, rm, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -91,6 +91,25 @@ async function waitForDebugTarget(port) {
   throw new Error("Electron CDP target did not become ready.");
 }
 
+async function waitForAdditionalTarget(port, originalTargetId) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(500) });
+      if (response.ok) {
+        const targets = await response.json();
+        const target = targets.find((candidate) => (
+          candidate.type === "page" && candidate.id !== originalTargetId && candidate.webSocketDebuggerUrl
+        ));
+        if (target) return target;
+      }
+    } catch {
+      // The additional Electron window is still opening.
+    }
+    await delay(125);
+  }
+  throw new Error("Electron media pop-out target did not become ready.");
+}
+
 async function connectCdp(webSocketUrl) {
   const socket = new WebSocket(webSocketUrl);
   const events = [];
@@ -156,7 +175,22 @@ async function waitForExpression(cdp, expression, message) {
   const runtimeEvents = cdp.events
     .filter((event) => event.method === "Runtime.exceptionThrown" || event.method === "Runtime.consoleAPICalled")
     .slice(-4);
-  throw new Error(`${message}\nRenderer text: ${String(bodyText).slice(-1200)}\nRuntime events: ${JSON.stringify(runtimeEvents)}`);
+  const mediaState = await evaluate(cdp, `
+    (() => {
+      const image = document.querySelector('.file-preview img');
+      return image ? { complete: image.complete, crossOrigin: image.crossOrigin, currentSrc: image.currentSrc, naturalHeight: image.naturalHeight, naturalWidth: image.naturalWidth, src: image.src } : null;
+    })()
+  `).catch(() => null);
+  const networkEvents = cdp.events
+    .filter((event) => event.method === "Network.responseReceived" || event.method === "Network.loadingFailed")
+    .slice(-8)
+    .map((event) => ({
+      errorText: event.params?.errorText,
+      method: event.method,
+      status: event.params?.response?.status,
+      url: event.params?.response?.url
+    }));
+  throw new Error(`${message}\nRenderer text: ${String(bodyText).slice(-1200)}\nMedia state: ${JSON.stringify(mediaState)}\nRuntime events: ${JSON.stringify(runtimeEvents)}\nNetwork events: ${JSON.stringify(networkEvents)}`);
 }
 
 async function captureScreenshot(cdp, screenshotPath, message) {
@@ -204,6 +238,43 @@ async function openContacts(cdp, message) {
   );
 }
 
+function createMinimalPdf(label) {
+  const stream = `BT /F1 18 Tf 72 720 Td (${label.replace(/[()\\]/g, "")}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+  ];
+  let output = "%PDF-1.4\n";
+  const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(Buffer.byteLength(output));
+    output += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(output);
+  output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  output += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(output, "ascii");
+}
+
+async function injectRendererFile(cdp, fileName, mimeType, content) {
+  const base64 = content.toString("base64");
+  await evaluate(cdp, `
+    (() => {
+      const bytes = Uint8Array.from(atob(${JSON.stringify(base64)}), (character) => character.charCodeAt(0));
+      const file = new File([bytes], ${JSON.stringify(fileName)}, { type: ${JSON.stringify(mimeType)} });
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      const input = document.querySelector('input[type="file"]');
+      input.files = transfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    })()
+  `);
+}
+
 const desktopPackage = JSON.parse(await readFile(
   path.join(process.cwd(), "apps", "desktop", "package.json"),
   "utf8"
@@ -227,6 +298,10 @@ const contactsOwnerScreenshotPath = path.resolve(argument(
 const contactsMemberScreenshotPath = path.resolve(argument(
   "contacts-member-screenshot",
   path.join(process.cwd(), "apps", "desktop", "out", "stage4-member-contacts.png")
+));
+const mediaScreenshotPath = path.resolve(argument(
+  "media-screenshot",
+  path.join(process.cwd(), "apps", "desktop", "out", "stage5-media-document-desk.png")
 ));
 const password = process.env.HAHATALK_SMOKE_PASSWORD ?? "HahaTalk!Stage2";
 const guestEmail = `renderer-guest-${Date.now()}@example.test`;
@@ -258,6 +333,7 @@ try {
   cdp = await connectCdp(target.webSocketDebuggerUrl);
   await cdp.send("Page.enable");
   await cdp.send("Runtime.enable");
+  await cdp.send("Network.enable");
 
   const hasAuthenticatedDesk = await evaluate(cdp, `Boolean(document.querySelector('button[title="로그아웃"]'))`);
   if (hasAuthenticatedDesk) {
@@ -627,6 +703,81 @@ try {
   );
   await captureScreenshot(cdp, contactsMemberScreenshotPath, "Consented member contacts screenshot is unexpectedly small.");
 
+  await logoutRenderer(cdp, "Guest did not return to login before the media desk check.");
+  await loginRenderer(cdp, "you@inviz.co.kr", password, "Owner could not log in for the media desk check.");
+  await waitForExpression(cdp, `Boolean(document.querySelector('.composer-media-mode'))`, "Installed media composer controls did not render.");
+  assert(
+    await evaluate(cdp, `typeof navigator.mediaDevices?.getDisplayMedia === 'function' && !document.querySelector('button[title="화면 캡처"]').disabled`),
+    "Installed renderer did not expose the consent-gated screen capture entry point."
+  );
+
+  const mediaMarker = Date.now();
+  const imageFileName = `stage5-renderer-${mediaMarker}.png`;
+  const imageContent = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64"
+  );
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.composer-media-mode button')]
+      .find((button) => button.textContent.includes('대상 공유')).click()
+  `);
+  await injectRendererFile(cdp, imageFileName, "image/png", imageContent);
+  await waitForExpression(
+    cdp,
+    `[...document.querySelectorAll('.media-library-main strong')].some((node) => node.textContent === ${JSON.stringify(imageFileName)})
+      && document.querySelector('.media-upload-status .tiny')?.textContent.includes('완료')`,
+    "Installed renderer did not complete and persist the image upload."
+  );
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.media-library-main')]
+      .find((button) => button.innerText.includes(${JSON.stringify(imageFileName)})).click()
+  `);
+  await waitForExpression(
+    cdp,
+    `Boolean(document.querySelector('.file-preview img')?.complete && document.querySelector('.file-preview img')?.naturalWidth > 0)`,
+    "Authenticated installed image preview did not render."
+  );
+
+  const pdfFileName = `stage5-document-${mediaMarker}.pdf`;
+  await evaluate(cdp, `
+    [...document.querySelectorAll('.composer-media-mode button')]
+      .find((button) => button.textContent.includes('내 보관')).click()
+  `);
+  await injectRendererFile(cdp, pdfFileName, "application/pdf", createMinimalPdf("HahaTalk Stage 5 PDF"));
+  await waitForExpression(
+    cdp,
+    `document.querySelector('.pdf-file-name')?.textContent === ${JSON.stringify(pdfFileName)}`,
+    "Installed renderer did not complete the private PDF upload."
+  );
+  await waitForExpression(
+    cdp,
+    `Boolean(document.querySelector('canvas.pdf-canvas')?.width > 100 && document.querySelector('canvas.pdf-canvas')?.height > 100)`,
+    "PDF.js did not render the authenticated installed PDF."
+  );
+
+  const objectFiles = await readdir(path.join(path.dirname(statusPath), "objects"), { recursive: true });
+  assert(objectFiles.some((entry) => String(entry).endsWith("original")), "Installed media bytes were not written under the private app object root.");
+  assert(objectFiles.some((entry) => String(entry).endsWith("shared-preview")), "Installed shared image derivative was not created.");
+  await captureScreenshot(cdp, mediaScreenshotPath, "Installed media desk screenshot is unexpectedly small.");
+
+  await evaluate(cdp, `document.querySelector('button[title="패널 팝업"]').click()`);
+  const popoutTarget = await waitForAdditionalTarget(debugPort, target.id);
+  const popoutCdp = await connectCdp(popoutTarget.webSocketDebuggerUrl);
+  try {
+    await popoutCdp.send("Page.enable");
+    await popoutCdp.send("Runtime.enable");
+    await waitForExpression(
+      popoutCdp,
+      `location.search.includes('panel=pdf')
+        && document.querySelector('.pdf-file-name')?.textContent === ${JSON.stringify(pdfFileName)}
+        && Boolean(document.querySelector('canvas.pdf-canvas')?.width > 100)`,
+      "PDF pop-out did not preserve its selected private document and rendered canvas."
+    );
+    await popoutCdp.send("Page.close").catch(() => evaluate(popoutCdp, "window.close()"));
+  } finally {
+    popoutCdp.close();
+  }
+
   await logoutRenderer(cdp, "Guest renderer logout did not return to login.");
   await Promise.race([
     cdp.send("Browser.close").catch(() => undefined),
@@ -649,7 +800,7 @@ try {
   assert(statusRemoved, "HahaTalk runtime status remained after renderer smoke shutdown.");
   assert(!isProcessRunning(application.pid), "HahaTalk process remained after renderer smoke shutdown.");
   assert(!(await isPortOpen(runtime.databasePort)), "Embedded PostgreSQL remained reachable after renderer smoke shutdown.");
-  console.log(`Windows renderer invitation and contacts check passed: ${runtime.version}, owner ${screenshotPath}, guest ${guestScreenshotPath}, contacts ${contactsOwnerScreenshotPath}, member ${contactsMemberScreenshotPath}`);
+  console.log(`Windows renderer invitation, contacts, and media check passed: ${runtime.version}, owner ${screenshotPath}, guest ${guestScreenshotPath}, contacts ${contactsOwnerScreenshotPath}, member ${contactsMemberScreenshotPath}, media ${mediaScreenshotPath}`);
 } finally {
   if (isProcessRunning(application.pid)) {
     await Promise.race([

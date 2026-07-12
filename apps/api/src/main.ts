@@ -11,9 +11,9 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-    allowedHeaders: ["Content-Type", hahaTalkClientHeader],
+    allowedHeaders: ["Content-Type", "X-HahaTalk-Part-Sha256", hahaTalkClientHeader],
     credentials: true,
-    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     origin: webOrigin
   });
   app.use(createOriginPolicy(webOrigin));
