@@ -1,10 +1,16 @@
 "use client";
 
-import { Camera, CameraOff, Mic, MicOff, PhoneCall, PhoneOff, RefreshCw, X } from "lucide-react";
+import { PhoneCall, PhoneOff, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LocalVideoTrack, RemoteTrack, Room } from "livekit-client";
 import type { CallView } from "@hahatalk/contracts";
 import { getJson, postJson } from "../lib/api-client";
+import {
+  AttachedMediaVideo,
+  LiveMediaControls,
+  type LiveMediaControlsHandle,
+  ScreenShareStage
+} from "./live-media-controls";
 
 type CallPhase = "waiting" | "connecting" | "active" | "reconnecting" | "ended" | "error";
 type MediaTrack = { identity: string; sid: string; track: RemoteTrack };
@@ -25,8 +31,10 @@ export function CallDesk({
   const [cameraEnabled, setCameraEnabledState] = useState(false);
   const [remoteTracks, setRemoteTracks] = useState<MediaTrack[]>([]);
   const [localVideoTrack, setLocalVideoTrack] = useState<LocalVideoTrack | undefined>();
+  const [localScreenTrack, setLocalScreenTrack] = useState<LocalVideoTrack | undefined>();
   const [isActionBusy, setIsActionBusy] = useState(false);
   const roomRef = useRef<Room | null>(null);
+  const mediaControlsRef = useRef<LiveMediaControlsHandle>(null);
   const intentionalDisconnectRef = useRef(false);
   const autoJoinStartedRef = useRef(false);
 
@@ -63,6 +71,7 @@ export function CallDesk({
       room.on(livekit.RoomEvent.Disconnected, () => {
         setRemoteTracks([]);
         setLocalVideoTrack(undefined);
+        setLocalScreenTrack(undefined);
         if (!intentionalDisconnectRef.current) {
           setError("미디어 연결이 종료되었습니다. 통화 상태를 다시 확인해 주세요.");
           setPhase("error");
@@ -138,6 +147,7 @@ export function CallDesk({
     const room = roomRef.current;
     roomRef.current = null;
     try {
+      await mediaControlsRef.current?.prepareDisconnect();
       await room?.localParticipant.setCameraEnabled(false).catch(() => undefined);
       await room?.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
       room?.disconnect();
@@ -147,38 +157,6 @@ export function CallDesk({
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "통화를 종료하지 못했습니다.");
       setPhase("error");
-    } finally {
-      setIsActionBusy(false);
-    }
-  }
-
-  async function toggleMicrophone() {
-    const room = roomRef.current;
-    if (!room) return;
-    setIsActionBusy(true);
-    try {
-      const enabled = !microphoneEnabled;
-      await room.localParticipant.setMicrophoneEnabled(enabled);
-      setMicrophoneEnabledState(enabled);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "마이크를 전환하지 못했습니다.");
-    } finally {
-      setIsActionBusy(false);
-    }
-  }
-
-  async function toggleCamera() {
-    const room = roomRef.current;
-    if (!room || call.callType !== "video") return;
-    setIsActionBusy(true);
-    try {
-      const enabled = !cameraEnabled;
-      const publication = await room.localParticipant.setCameraEnabled(enabled);
-      setLocalVideoTrack(enabled ? publication?.videoTrack : undefined);
-      setCameraEnabledState(enabled && Boolean(publication?.videoTrack));
-      setCameraWarning("");
-    } catch (nextError) {
-      setCameraWarning(nextError instanceof Error ? nextError.message : "카메라를 전환하지 못했습니다.");
     } finally {
       setIsActionBusy(false);
     }
@@ -197,9 +175,14 @@ export function CallDesk({
   }
 
   const videos = new Map(
-    remoteTracks.filter((item) => item.track.kind === "video").map((item) => [item.identity, item.track])
+    remoteTracks.filter((item) => item.track.kind === "video" && item.track.source === "camera").map((item) => [item.identity, item.track])
   );
-  const audioTracks = remoteTracks.filter((item) => item.track.kind === "audio");
+  const audioTracks = remoteTracks.filter((item) => item.track.kind === "audio" && item.track.source === "microphone");
+  const remoteScreen = remoteTracks.find((item) => item.track.kind === "video" && item.track.source === "screen_share");
+  const screenSharer = call.participants.find((participant) => participant.screenShareStatus !== "off")
+    ?? call.participants.find((participant) => participant.mediaIdentity === remoteScreen?.identity);
+  const self = call.participants.find((participant) => participant.isSelf);
+  const screenTrack = screenSharer?.isSelf ? localScreenTrack : remoteScreen?.track;
   const phaseLabel = phase === "waiting" ? "수신 통화"
     : phase === "connecting" ? "연결 중"
     : phase === "reconnecting" ? "네트워크 재연결 중"
@@ -222,12 +205,22 @@ export function CallDesk({
         ) : null}
       </header>
 
+      {screenSharer ? (
+        <ScreenShareStage
+          busy={isActionBusy}
+          isSelf={screenSharer.isSelf}
+          onStop={() => void mediaControlsRef.current?.stopScreenShare()}
+          sharerName={screenSharer.isSelf ? "내" : `${screenSharer.person.displayName}님의`}
+          track={screenTrack}
+        />
+      ) : null}
+
       <div className="call-media-grid" data-count={call.participants.length}>
         {call.participants.map((participant) => {
           const videoTrack = participant.isSelf ? localVideoTrack : videos.get(participant.mediaIdentity);
           return (
             <div className="call-media-tile" data-self={participant.isSelf} key={participant.person.id}>
-              {videoTrack ? <AttachedVideo mirrored={participant.isSelf} track={videoTrack} /> : (
+              {videoTrack ? <AttachedMediaVideo mirrored={participant.isSelf} track={videoTrack} /> : (
                 <div className="call-avatar-stage">
                   <img alt="" src={participant.person.character.thumbnailUrl} />
                 </div>
@@ -258,14 +251,29 @@ export function CallDesk({
         ) : null}
         {["active", "reconnecting"].includes(phase) ? (
           <>
-            <button className="call-control" data-enabled={microphoneEnabled} disabled={isActionBusy} onClick={() => void toggleMicrophone()} title={microphoneEnabled ? "마이크 끄기" : "마이크 켜기"} type="button">
-              {microphoneEnabled ? <Mic size={21} /> : <MicOff size={21} />}
-            </button>
-            {call.callType === "video" ? (
-              <button className="call-control" data-enabled={cameraEnabled} disabled={isActionBusy} onClick={() => void toggleCamera()} title={cameraEnabled ? "카메라 끄기" : "카메라 켜기"} type="button">
-                {cameraEnabled ? <Camera size={21} /> : <CameraOff size={21} />}
-              </button>
-            ) : null}
+            <LiveMediaControls
+              active={phase === "active"}
+              busy={isActionBusy}
+              cameraEnabled={cameraEnabled}
+              cameraTrack={localVideoTrack}
+              canPublishAudio
+              canPublishVideo={call.callType === "video"}
+              canShareScreen={call.canShareScreen}
+              microphoneEnabled={microphoneEnabled}
+              onBusyChange={setIsActionBusy}
+              onCameraEnabledChange={setCameraEnabledState}
+              onCameraTrackChange={setLocalVideoTrack}
+              onCameraWarning={setCameraWarning}
+              onError={setError}
+              onLocalScreenTrackChange={setLocalScreenTrack}
+              onMicrophoneEnabledChange={setMicrophoneEnabledState}
+              onUpdated={(updated) => onUpdated(updated as CallView)}
+              ref={mediaControlsRef}
+              room={roomRef.current}
+              screenShareBlocked={Boolean(screenSharer && !screenSharer.isSelf)}
+              screenShareStatus={self?.screenShareStatus ?? "off"}
+              sessionPath={`/calls/${call.id}`}
+            />
             <button className="call-control hangup" disabled={isActionBusy} onClick={() => void leaveOrEnd()} title={call.canEnd ? "모두의 통화 종료" : "통화 나가기"} type="button">
               <PhoneOff size={22} />
             </button>
@@ -296,17 +304,6 @@ export function CallDesk({
       </footer>
     </section>
   );
-}
-
-function AttachedVideo({ mirrored = false, track }: { mirrored?: boolean; track: LocalVideoTrack | RemoteTrack }) {
-  const ref = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    track.attach(element);
-    return () => { track.detach(element); };
-  }, [track]);
-  return <video autoPlay className="call-video" data-mirrored={mirrored} muted={mirrored} playsInline ref={ref} />;
 }
 
 function AttachedAudio({ track }: { track: RemoteTrack }) {

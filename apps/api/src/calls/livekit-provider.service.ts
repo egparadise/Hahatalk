@@ -64,12 +64,14 @@ export class LiveKitProviderService {
     roomName: string,
     identity: string,
     canPublishAudio: boolean,
-    canPublishVideo: boolean
+    canPublishVideo: boolean,
+    canShareScreen = false
   ) {
     const { client } = this.client();
     const sources = [
       ...(canPublishAudio ? [TrackSource.MICROPHONE] : []),
-      ...(canPublishVideo ? [TrackSource.CAMERA] : [])
+      ...(canPublishVideo ? [TrackSource.CAMERA] : []),
+      ...(canShareScreen ? [TrackSource.SCREEN_SHARE] : [])
     ];
     await client.updateParticipant(roomName, identity, {
       permission: {

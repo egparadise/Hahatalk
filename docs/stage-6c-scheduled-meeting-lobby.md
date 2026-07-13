@@ -2,7 +2,7 @@
 
 ## Scope
 
-Stage 6C connects an exact calendar occurrence to a moderated LiveKit meeting. It adds a waiting lobby and host, cohost, speaker, and attendee roles. Screen sharing, device selection, background processing, recording, STT/TTS, and broadcasting remain later stages.
+Stage 6C connects an exact calendar occurrence to a moderated LiveKit meeting. It adds a waiting lobby and host, cohost, speaker, and attendee roles. Screen sharing, device selection, and background processing arrive in Stage 6D; recording, STT/TTS, and broadcasting remain later stages.
 
 ## Schedule Binding
 

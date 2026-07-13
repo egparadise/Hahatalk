@@ -33,6 +33,8 @@
     "calendar:integration": "node tools/harness/schedule-rsvp-reminders.mjs",
     "calls:integration": "node tools/harness/livekit-call-core.mjs",
     "meetings:integration": "node tools/harness/scheduled-meeting-lobby.mjs",
+    "screen-share:integration": "npm run calls:integration && npm run meetings:integration",
+    "desktop:stage6d-renderer-smoke": "npm run desktop:call-renderer-smoke && npm run desktop:meeting-renderer-smoke",
     "build": "npm run build -w packages/contracts && npm run build -w apps/api && npm run build -w apps/web && npm run build -w apps/desktop",
     "typecheck": "npm run typecheck -w packages/contracts && npm run typecheck -w apps/api && npm run typecheck -w apps/web && npm run typecheck -w apps/desktop",
     "test": "npm run test -w packages/contracts",

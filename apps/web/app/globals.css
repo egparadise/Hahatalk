@@ -2499,6 +2499,10 @@ button:disabled {
   color: #f7faf8;
 }
 
+.call-desk:has(> .screen-share-stage) {
+  grid-template-rows: auto minmax(220px, 58%) minmax(140px, 1fr) auto auto;
+}
+
 .call-desk-header {
   min-height: 76px;
   padding: 14px 20px;
@@ -2558,6 +2562,76 @@ button:disabled {
   grid-auto-rows: minmax(160px, 1fr);
   gap: 10px;
   overflow: auto;
+}
+
+.screen-share-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 220px;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  background: #101613;
+}
+
+.screen-share-stage .call-video {
+  object-fit: contain;
+}
+
+.screen-share-banner {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px 8px 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(16, 22, 19, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.screen-share-banner > span,
+.screen-share-banner button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.screen-share-banner > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #d9e4df;
+  font-size: 12px;
+}
+
+.screen-share-banner button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #d85d50;
+  border-radius: 5px;
+  color: #fff;
+  background: #b9473e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.screen-share-waiting {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #b6c4be;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .call-media-grid[data-count="1"] {
@@ -2675,6 +2749,127 @@ button:disabled {
   gap: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   background: #202b27;
+}
+
+.live-media-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.screen-share-control[data-enabled="true"] {
+  color: #fff;
+  border-color: #d85d50;
+  background: #b9473e;
+}
+
+.call-control[data-open="true"] {
+  color: #10201b;
+  border-color: #5ee1cf;
+  background: #5ee1cf;
+}
+
+.live-media-settings {
+  position: absolute;
+  z-index: 6;
+  right: 0;
+  bottom: 58px;
+  width: min(340px, calc(100vw - 32px));
+  padding: 13px;
+  display: grid;
+  gap: 11px;
+  border: 1px solid #bfcac5;
+  border-radius: 7px;
+  color: #17201d;
+  background: #f7faf8;
+  box-shadow: 0 14px 34px rgba(4, 12, 9, 0.32);
+}
+
+.live-media-settings-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.live-media-settings-heading strong {
+  font-size: 13px;
+}
+
+.live-media-settings .icon-button {
+  width: 32px;
+  height: 32px;
+}
+
+.live-device-select,
+.camera-effect-control {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.live-device-select > span,
+.camera-effect-control > span {
+  color: #586861;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.live-device-select select {
+  min-width: 0;
+  width: 100%;
+  height: 34px;
+  padding: 0 30px 0 9px;
+  border: 1px solid #cad3cf;
+  border-radius: 5px;
+  color: #17201d;
+  background: #fff;
+  font-size: 11px;
+}
+
+.camera-effect-control .segmented-control {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.camera-effect-control .segmented-control button,
+.background-image-button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  overflow: hidden;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.background-image-button {
+  cursor: pointer;
+  border-radius: 5px;
+  color: #586861;
+}
+
+.background-image-button[data-active="true"] {
+  color: #fff;
+  background: var(--teal-dark);
+}
+
+.background-image-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.camera-effect-control small {
+  color: #8d332c;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .call-control {
@@ -2817,5 +3012,20 @@ button:disabled {
   .call-media-grid,
   .call-media-grid[data-count] {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .call-desk:has(> .screen-share-stage) {
+    grid-template-rows: auto minmax(180px, 48%) minmax(120px, 1fr) auto auto;
+  }
+
+  .live-media-controls {
+    gap: 7px;
+  }
+
+  .live-media-settings {
+    position: fixed;
+    right: 8px;
+    bottom: 82px;
+    width: min(340px, calc(100vw - 16px));
   }
 }

@@ -5,7 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { RoomServiceClient } from "livekit-server-sdk";
+import { RoomServiceClient, TrackSource } from "livekit-server-sdk";
 
 function argument(name, fallback) {
   const prefix = `--${name}=`;
@@ -259,6 +259,21 @@ async function waitForProviderParticipant(roomClient, canPublish) {
   throw new Error(`Installed meeting participant did not reach canPublish=${canPublish}.`);
 }
 
+async function waitForMeetingScreenShare(roomClient, expected) {
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    const rooms = await roomClient.listRooms();
+    if (rooms[0]) {
+      const participants = await roomClient.listParticipants(rooms[0].name);
+      const participant = participants[0];
+      const hasTrack = participant?.tracks?.some((track) => track.source === TrackSource.SCREEN_SHARE) ?? false;
+      const hasPermission = participant?.permission?.canPublishSources?.includes(TrackSource.SCREEN_SHARE) ?? false;
+      if (participant && hasTrack === expected && hasPermission === expected) return participant;
+    }
+    await delay(125);
+  }
+  throw new Error(`Installed meeting screen share did not reach expected=${expected}.`);
+}
+
 async function stopChild(child) {
   if (!child || child.exitCode !== null) return;
   child.kill("SIGTERM");
@@ -361,7 +376,19 @@ try {
   await waitForExpression(cdp, "document.querySelector('.meeting-room[data-phase=\"active\"]') !== null", "Installed participant did not connect to the meeting.", 220);
   const publisher = await waitForProviderParticipant(livekit.client, true);
   assert(publisher.participant.identity !== mina.body.user.id, "Installed meeting exposed stable app identity to LiveKit.");
+  assert(!publisher.participant.permission?.canPublishSources?.includes(TrackSource.SCREEN_SHARE), "Initial meeting permission included screen sharing.");
   await waitForExpression(cdp, "document.querySelector('.meeting-room .call-video')?.videoWidth > 0", "Fake camera did not render in the installed meeting.", 180);
+
+  await evaluate(cdp, "document.querySelector('.meeting-room button[title=\"화면 공유\"]').click()");
+  await waitForExpression(
+    cdp,
+    "document.querySelector('.meeting-room .screen-share-stage .call-video')?.videoWidth > 0",
+    "Installed speaker could not publish a scheduled-meeting screen.",
+    240
+  );
+  await waitForMeetingScreenShare(livekit.client, true);
+  const sharingMeeting = await apiRequest(runtime, mina.cookie, `/meetings/${meeting.id}`);
+  assert(sharingMeeting.participants.find((participant) => participant.isSelf)?.screenShareStatus === "active", "Scheduled meeting did not persist the active speaker share.");
 
   const current = await apiRequest(runtime, owner.cookie, `/meetings/${meeting.id}`);
   await apiRequest(runtime, owner.cookie, `/meetings/${meeting.id}/participants/${encodeURIComponent(mina.body.user.id)}/role`, {
@@ -370,12 +397,15 @@ try {
   });
   const attendeeState = await waitForProviderParticipant(livekit.client, false);
   assert((attendeeState.participant.tracks?.length ?? 0) === 0, "Demoted attendee retained a published provider track.");
+  await waitForMeetingScreenShare(livekit.client, false);
   await waitForExpression(
     cdp,
-    "document.querySelector('.meeting-room')?.innerText.includes('참석자') && !document.querySelector('.meeting-room button[title^=\"마이크\"]') && !document.querySelector('.meeting-room button[title^=\"카메라\"]')",
-    "Demoted attendee retained publisher controls in the installed renderer.",
+    "document.querySelector('.meeting-room')?.innerText.includes('참석자') && !document.querySelector('.meeting-room button[title^=\"마이크\"]') && !document.querySelector('.meeting-room button[title^=\"카메라\"]') && !document.querySelector('.meeting-room .screen-share-stage')",
+    "Demoted attendee retained publisher controls or a shared screen in the installed renderer.",
     180
   );
+  const demotedMeeting = await apiRequest(runtime, mina.cookie, `/meetings/${meeting.id}`);
+  assert(demotedMeeting.participants.find((participant) => participant.isSelf)?.screenShareStatus === "off", "Role demotion did not close the durable screen-share lifecycle.");
   const layout = await evaluate(cdp, `
     (() => {
       const desk = document.querySelector('.meeting-room').getBoundingClientRect();
@@ -407,7 +437,7 @@ try {
   for (let attempt = 0; attempt < 80 && isProcessRunning(application.pid); attempt += 1) await delay(125);
   assert(!isProcessRunning(application.pid), "Installed meeting renderer process remained after shutdown.");
   assert(!(await isPortOpen(runtime.databasePort)), "Installed meeting PostgreSQL remained reachable after shutdown.");
-  console.log(`Windows installed scheduled meeting passed: lobby, admission, real SFU, fake camera, live speaker demotion, track revoke, layout, and screenshot ${screenshotPath}`);
+  console.log(`Windows installed scheduled meeting passed: lobby, real SFU, speaker screen share, role-based screen/camera/mic revoke, layout, and screenshot ${screenshotPath}`);
 } finally {
   if (isProcessRunning(application.pid)) {
     await Promise.race([cdp?.send("Browser.close").catch(() => undefined) ?? Promise.resolve(), delay(1_000)]);

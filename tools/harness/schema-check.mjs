@@ -103,6 +103,8 @@ const requiredFragments = [
   "lobby_opens_at",
   "call_sessions_event_occurrence_meeting_idx",
   "call_participants_meeting_moderation_idx",
+  "screen_share_status",
+  "call_participants_one_screen_share_idx",
 ];
 
 for (const fragment of requiredFragments) {
@@ -129,8 +131,10 @@ const governanceFiles = [
   "apps/api/migrations/003_persisted_conversation_core.sql",
   "apps/api/migrations/004_contacts_family_managed_groups.sql",
   "apps/api/migrations/005_media_document_desk.sql",
-  "apps/api/migrations/006_schedule_rsvp_reminders.sql"
-  ,"apps/api/migrations/007_livekit_call_core.sql"
+  "apps/api/migrations/006_schedule_rsvp_reminders.sql",
+  "apps/api/migrations/007_livekit_call_core.sql",
+  "apps/api/migrations/008_scheduled_meeting_lobby.sql",
+  "apps/api/migrations/009_screen_share_device_background.sql"
 ];
 
 for (const file of governanceFiles) {

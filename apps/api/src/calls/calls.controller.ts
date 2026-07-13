@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import { ArrayMaxSize, IsArray, IsIn, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
-import type { CallType, StartCallInput } from "@hahatalk/contracts";
+import type { CallType, ScreenShareStopReason, StartCallInput, StopScreenShareInput } from "@hahatalk/contracts";
 import { CurrentAuth } from "../auth/auth.decorators.js";
 import type { AuthPrincipal } from "../auth/auth.types.js";
 import { CallsService } from "./calls.service.js";
@@ -23,6 +23,11 @@ class StartCallDto implements StartCallInput {
   @IsString({ each: true })
   @MaxLength(80, { each: true })
   targetUserIds: string[] = [];
+}
+
+class StopScreenShareDto implements StopScreenShareInput {
+  @IsIn(["user_stopped", "capture_cancelled", "track_ended", "publish_failed", "permission_changed"])
+  reason: ScreenShareStopReason = "user_stopped";
 }
 
 @Controller("calls")
@@ -60,6 +65,28 @@ export class CallsController {
   @HttpCode(HttpStatus.OK)
   connected(@Param("callId", ParseUUIDPipe) callId: string, @CurrentAuth() principal: AuthPrincipal) {
     return this.calls.connected(principal, callId);
+  }
+
+  @Post(":callId/screen-share/start")
+  @HttpCode(HttpStatus.OK)
+  startScreenShare(@Param("callId", ParseUUIDPipe) callId: string, @CurrentAuth() principal: AuthPrincipal) {
+    return this.calls.startScreenShare(principal, callId);
+  }
+
+  @Post(":callId/screen-share/active")
+  @HttpCode(HttpStatus.OK)
+  confirmScreenShare(@Param("callId", ParseUUIDPipe) callId: string, @CurrentAuth() principal: AuthPrincipal) {
+    return this.calls.confirmScreenShare(principal, callId);
+  }
+
+  @Post(":callId/screen-share/stop")
+  @HttpCode(HttpStatus.OK)
+  stopScreenShare(
+    @Param("callId", ParseUUIDPipe) callId: string,
+    @Body() body: StopScreenShareDto,
+    @CurrentAuth() principal: AuthPrincipal
+  ) {
+    return this.calls.stopScreenShare(principal, callId, body.reason);
   }
 
   @Post(":callId/decline")

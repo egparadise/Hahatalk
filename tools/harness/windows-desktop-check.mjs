@@ -14,7 +14,8 @@ const requiredFiles = [
   "apps/desktop/scripts/generate-windows-icon.ps1",
   "tools/harness/windows-package-smoke.ps1",
   "tools/harness/windows-renderer-auth-smoke.mjs",
-  "tools/harness/windows-meeting-renderer-smoke.mjs"
+  "tools/harness/windows-meeting-renderer-smoke.mjs",
+  "apps/web/components/live-media-controls.tsx"
 ];
 
 for (const relativePath of requiredFiles) {
@@ -36,6 +37,7 @@ const assertions = [
   [mainSource.includes("getPrimaryDisplay().workAreaSize"), "window size must respect the Windows work area"],
   [mainSource.includes("utilityProcess.fork"), "packaged API must run in a utility process"],
   [mainSource.includes("setDisplayMediaRequestHandler"), "desktop screen-capture selection handler is required"],
+  [mainSource.includes("wasm-unsafe-eval"), "local MediaPipe WebAssembly CSP permission is required"],
   [mainSource.includes("will-navigate"), "navigation restriction is required"],
   [mainSource.includes("runtime-status.json"), "packaged runtime status evidence is required"],
   [mainSource.includes("rendererApiHealthy"), "renderer-to-API bridge verification is required"],
@@ -60,11 +62,13 @@ if (requireRuntime) {
     path.join(desktopRoot, "runtime", "migrations", "003_persisted_conversation_core.sql"),
     path.join(desktopRoot, "runtime", "migrations", "007_livekit_call_core.sql"),
     path.join(desktopRoot, "runtime", "migrations", "008_scheduled_meeting_lobby.sql"),
+    path.join(desktopRoot, "runtime", "migrations", "009_screen_share_device_background.sql"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "initdb.exe"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "pg_ctl.exe"),
     path.join(desktopRoot, "runtime", "postgres", "server_license.txt"),
     path.join(desktopRoot, "runtime", "node_modules", "argon2", "argon2.cjs"),
-    path.join(desktopRoot, "runtime", "web", "index.html")
+    path.join(desktopRoot, "runtime", "web", "index.html"),
+    path.join(desktopRoot, "runtime", "web", "media-segmentation", "selfie_segmenter.tflite")
   ];
   for (const filePath of runtimeFiles) await access(filePath);
 }

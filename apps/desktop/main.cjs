@@ -175,7 +175,7 @@ function setStaticHeaders(response) {
   }
   response.setHeader("Content-Security-Policy", [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: http://127.0.0.1:*",
     "font-src 'self' data:",
@@ -636,6 +636,11 @@ function configureSessionPermissions() {
         types: ["screen", "window"]
       });
       const selectableSources = sources.slice(0, 12);
+      if (process.env.HAHATALK_TEST_FAKE_MEDIA === "1") {
+        const source = selectableSources.find((candidate) => candidate.id.startsWith("screen:")) ?? selectableSources[0];
+        callback(source ? { video: source } : {});
+        return;
+      }
       const cancelIndex = selectableSources.length;
       const result = await dialog.showMessageBox({
         buttons: [...selectableSources.map((source) => source.name), "취소"],

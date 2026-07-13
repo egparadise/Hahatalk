@@ -273,6 +273,7 @@ try {
   assert(claims.sub !== owner.userId && claims.video?.room === directRoomName, "Join token used a stable app identity or wrong room.");
   assert(claims.video?.roomJoin === true && claims.video?.canSubscribe === true && claims.video?.canPublishData === false, "Join token grants were not least privilege.");
   assert(JSON.stringify(claims.video?.canPublishSources).includes("microphone") && JSON.stringify(claims.video?.canPublishSources).includes("camera"), "Video token did not limit sources to microphone and camera.");
+  assert(!JSON.stringify(claims.video?.canPublishSources).includes("screen_share"), "Initial call token granted screen sharing before explicit consent.");
   assert(!claims.video?.roomAdmin && !claims.video?.roomRecord && !claims.video?.roomCreate, "Join token granted moderation, recording, or room creation.");
   const ownerConnected = await post(baseUrl, webOrigin, owner.cookie, `/calls/${direct.id}/connected`);
   assert(ownerConnected.status === "active" && ownerConnected.participants.find((item) => item.isSelf)?.status === "joined", "Owner connection was not confirmed.");
@@ -281,6 +282,37 @@ try {
   assert(minaClaims.sub !== claims.sub, "Two users received the same provider identity.");
   const minaConnected = await post(baseUrl, webOrigin, mina.cookie, `/calls/${direct.id}/connected`);
   assert(minaConnected.status === "active" && minaConnected.participants.every((item) => item.status === "joined"), "Two-party app presence did not become active.");
+  await post(baseUrl, webOrigin, owner.cookie, `/calls/${direct.id}/screen-share/active`, {}, 409);
+  const missingProviderShare = await post(baseUrl, webOrigin, owner.cookie, `/calls/${direct.id}/screen-share/start`, {}, 503);
+  assert(String(missingProviderShare.message).includes("Screen sharing permission"), "Missing provider participant did not roll back screen sharing safely.");
+  const rolledBackShare = await request(baseUrl, `/calls/${direct.id}`, { cookie: owner.cookie });
+  assert(
+    rolledBackShare.body.participants.find((participant) => participant.isSelf)?.screenShareStatus === "off",
+    "Provider grant failure left the call screen share locked."
+  );
+  const ownerInternal = await database.query("select id from users where public_id = $1", [owner.userId]);
+  await database.query(
+    `update call_participants set screen_share_status = 'starting', screen_share_requested_at = now()
+     where call_session_id = $1 and user_id = $2`,
+    [direct.id, ownerInternal.rows[0].id]
+  );
+  await post(baseUrl, webOrigin, mina.cookie, `/calls/${direct.id}/screen-share/start`, {}, 409);
+  let uniqueShareRejected = false;
+  try {
+    await database.query(
+      `update call_participants cp set screen_share_status = 'starting', screen_share_requested_at = now()
+       from users u where cp.user_id = u.id and cp.call_session_id = $1 and u.public_id = $2`,
+      [direct.id, mina.userId]
+    );
+  } catch (error) {
+    uniqueShareRejected = error?.code === "23505";
+  }
+  assert(uniqueShareRejected, "Database did not enforce one active screen share per call session.");
+  await database.query(
+    `update call_participants set screen_share_status = 'off', screen_share_ended_at = now()
+     where call_session_id = $1`,
+    [direct.id]
+  );
 
   minaSocket.close();
   minaSocket = undefined;
@@ -360,6 +392,8 @@ try {
 
   const migration = await database.query("select checksum from schema_migrations where version = '007_livekit_call_core.sql'");
   assert(migration.rowCount === 1 && /^[0-9a-f]{64}$/.test(migration.rows[0].checksum), "Migration 007 checksum evidence is missing.");
+  const screenMigration = await database.query("select checksum from schema_migrations where version = '009_screen_share_device_background.sql'");
+  assert(screenMigration.rowCount === 1 && /^[0-9a-f]{64}$/.test(screenMigration.rows[0].checksum), "Migration 009 checksum evidence is missing.");
   const tables = await database.query(
     `select table_name from information_schema.tables
      where table_schema = 'public' and table_name in ('call_sessions', 'call_participants', 'call_events')`
@@ -369,14 +403,14 @@ try {
     `select action, metadata_json::text as metadata from audit_logs
      where target_type = 'call_session' order by created_at`
   );
-  for (const action of ["call.start_requested", "call.ringing", "call.participant_connecting", "call.participant_joined", "call.ended", "call.provider_start_failed"]) {
+  for (const action of ["call.start_requested", "call.ringing", "call.participant_connecting", "call.participant_joined", "call.screen_share_requested", "call.screen_share_provider_grant_failed", "call.ended", "call.provider_start_failed"]) {
     assert(audit.rows.some((row) => row.action === action), `Call audit action is missing: ${action}`);
   }
   const outbox = await database.query("select payload_json::text as payload from outbox_events where aggregate_type = 'call'");
   const durableText = JSON.stringify({ audit: audit.rows, outbox: outbox.rows });
   assert(!durableText.includes(apiSecret) && !durableText.includes("eyJ") && !durableText.includes(directRoomName), "Durable audit/outbox data exposed a secret, token, or provider room name.");
 
-  console.log("LiveKit call core integration passed: provider rooms, scoped tokens, direct/group/hub privacy, guest boundary, realtime, restart, failure, and audit verified.");
+  console.log("LiveKit call integration passed: provider rooms, scoped tokens, screen-share grant rollback and singleton, direct/group/hub privacy, guest boundary, realtime, restart, failure, and audit verified.");
 } finally {
   minaSocket?.close();
   await stopChild(api?.child).catch(() => undefined);

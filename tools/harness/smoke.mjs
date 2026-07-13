@@ -20,6 +20,7 @@ const requiredFiles = [
   "apps/api/migrations/006_schedule_rsvp_reminders.sql",
   "apps/api/migrations/007_livekit_call_core.sql",
   "apps/api/migrations/008_scheduled_meeting_lobby.sql",
+  "apps/api/migrations/009_screen_share_device_background.sql",
   "apps/api/src/invitations/invitation.controller.ts",
   "apps/api/src/invitations/invitation.service.ts",
   "apps/api/src/modules/chat.controller.ts",
@@ -37,6 +38,8 @@ const requiredFiles = [
   "apps/api/src/meetings/meetings.service.ts",
   "apps/web/components/call-desk.tsx",
   "apps/web/components/meeting-desk.tsx",
+  "apps/web/components/live-media-controls.tsx",
+  "apps/web/public/media-segmentation/selfie_segmenter.tflite",
   "apps/web/components/media-panel.tsx",
   "apps/web/components/pdf-viewer.tsx",
   "apps/desktop/main.cjs",
@@ -51,6 +54,7 @@ const requiredFiles = [
   "docs/stage-5-media-document-desk.md",
   "docs/stage-6b-livekit-call-core.md",
   "docs/stage-6c-scheduled-meeting-lobby.md",
+  "docs/stage-6d-screen-share-device-background.md",
   "docs/schema.sql",
   "AGENTS.md",
   ".agents/skills/hahatalk-feature-stage/SKILL.md",
@@ -109,6 +113,9 @@ const requiredTerms = [
   "scheduled_meeting",
   "meeting:updated",
   "updateParticipantPermissions",
+  "screen_share_status",
+  "BackgroundProcessor",
+  "setScreenShareEnabled",
 ];
 
 for (const file of requiredFiles) {
@@ -132,6 +139,7 @@ const source = [
   readFileSync(join(root, "apps/api/migrations/005_media_document_desk.sql"), "utf8"),
   readFileSync(join(root, "apps/api/migrations/007_livekit_call_core.sql"), "utf8"),
   readFileSync(join(root, "apps/api/migrations/008_scheduled_meeting_lobby.sql"), "utf8"),
+  readFileSync(join(root, "apps/api/migrations/009_screen_share_device_background.sql"), "utf8"),
   readFileSync(join(root, "apps/api/src/invitations/invitation.controller.ts"), "utf8"),
   readFileSync(join(root, "apps/api/src/invitations/invitation.service.ts"), "utf8"),
   readFileSync(join(root, "apps/api/src/modules/chat.gateway.ts"), "utf8"),
@@ -150,6 +158,7 @@ const source = [
   readFileSync(join(root, "apps/api/src/meetings/meetings.controller.ts"), "utf8"),
   readFileSync(join(root, "apps/api/src/meetings/meetings.service.ts"), "utf8"),
   readFileSync(join(root, "apps/web/components/meeting-desk.tsx"), "utf8"),
+  readFileSync(join(root, "apps/web/components/live-media-controls.tsx"), "utf8"),
   readFileSync(join(root, "apps/desktop/main.cjs"), "utf8"),
   readFileSync(join(root, "docs/windows-desktop-runtime.md"), "utf8"),
   readFileSync(join(root, "packages/contracts/src/index.ts"), "utf8"),
@@ -159,6 +168,7 @@ const source = [
   readFileSync(join(root, "docs/stage-4-contacts-family-managed-groups.md"), "utf8"),
   readFileSync(join(root, "docs/stage-5-media-document-desk.md"), "utf8"),
   readFileSync(join(root, "docs/stage-6b-livekit-call-core.md"), "utf8"),
+  readFileSync(join(root, "docs/stage-6d-screen-share-device-background.md"), "utf8"),
   readFileSync(join(root, "docs/schema.sql"), "utf8"),
   readFileSync(join(root, "AGENTS.md"), "utf8")
 ].join("\n");

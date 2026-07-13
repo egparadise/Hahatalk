@@ -658,6 +658,10 @@ create table call_participants (
   provider_identity text not null unique,
   can_publish_audio boolean not null default true,
   can_publish_video boolean not null default false,
+  screen_share_status text not null default 'off' check (screen_share_status in ('off', 'starting', 'active')),
+  screen_share_requested_at timestamptz,
+  screen_share_started_at timestamptz,
+  screen_share_ended_at timestamptz,
   event_response_status text check (event_response_status is null or event_response_status in ('needs_action', 'accepted', 'declined', 'tentative')),
   token_version integer not null default 1 check (token_version > 0),
   invited_at timestamptz not null default now(),
@@ -670,7 +674,8 @@ create table call_participants (
   declined_at timestamptz,
   role_updated_at timestamptz,
   updated_at timestamptz not null default now(),
-  primary key (call_session_id, user_id)
+  primary key (call_session_id, user_id),
+  check (screen_share_status = 'off' or screen_share_requested_at is not null)
 );
 
 create index call_participants_user_status_idx
@@ -679,6 +684,14 @@ create index call_participants_user_status_idx
 create index call_participants_meeting_moderation_idx
   on call_participants(call_session_id, role, status, waiting_at)
   where role in ('host', 'cohost') or status = 'waiting';
+
+create unique index call_participants_one_screen_share_idx
+  on call_participants(call_session_id)
+  where screen_share_status in ('starting', 'active');
+
+create index call_participants_screen_share_status_idx
+  on call_participants(call_session_id, screen_share_status)
+  where screen_share_status in ('starting', 'active');
 
 create table call_events (
   id uuid primary key default gen_random_uuid(),

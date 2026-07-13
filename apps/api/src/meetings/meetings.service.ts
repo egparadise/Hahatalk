@@ -18,7 +18,9 @@ import {
   type MeetingRole,
   type MeetingStatus,
   type MeetingView,
-  type ScheduleMeetingInput
+  type ScheduleMeetingInput,
+  type ScreenShareStatus,
+  type ScreenShareStopReason
 } from "@hahatalk/contracts";
 import type { PoolClient } from "pg";
 import type { AuthPrincipal } from "../auth/auth.types.js";
@@ -89,6 +91,8 @@ type MeetingParticipantRow = {
   provider_identity: string;
   public_id: string;
   role: MeetingRole;
+  screen_share_started_at: Date | null;
+  screen_share_status: ScreenShareStatus;
   status: MeetingParticipantStatus;
   user_id: string;
   waiting_at: Date | null;
@@ -108,6 +112,7 @@ type LockedMeetingParticipant = {
   provider_identity: string;
   provider_room_name: string;
   role: MeetingRole;
+  screen_share_status: ScreenShareStatus;
   status: MeetingStatus;
   version: number;
 };
@@ -480,10 +485,11 @@ export class MeetingsService {
         participant_status: MeetingParticipantStatus;
         previous_role: MeetingRole;
         provider_identity: string;
+        screen_share_status: ScreenShareStatus;
         user_id: string;
       }>(
         `select cp.user_id, cp.role as previous_role, cp.status as participant_status,
-                cp.provider_identity, om.role as organization_role
+                cp.provider_identity, cp.screen_share_status, om.role as organization_role
          from call_participants cp
          join users u on u.id = cp.user_id
          join call_sessions c on c.id = cp.call_session_id
@@ -503,12 +509,22 @@ export class MeetingsService {
         throw new ForbiddenException("Guest participants must remain attendees.");
       }
       if (participant.previous_role === role) {
-        return { changed: false, joined: false, providerIdentity: participant.provider_identity, roomName: locked.provider_room_name };
+        return {
+          changed: false,
+          joined: false,
+          keepScreenShare: participant.screen_share_status !== "off",
+          providerIdentity: participant.provider_identity,
+          roomName: locked.provider_room_name
+        };
       }
       const canPublish = role !== "attendee";
       await client.query(
         `update call_participants set
            role = $3, can_publish_audio = $4, can_publish_video = $5,
+           screen_share_status = case when $4 then screen_share_status else 'off' end,
+           screen_share_ended_at = case
+             when not $4 and screen_share_status <> 'off' then now()
+             else screen_share_ended_at end,
            token_version = token_version + 1, role_updated_at = now(), updated_at = now()
          where call_session_id = $1 and user_id = $2`,
         [meetingId, participant.user_id, role, canPublish, canPublish && locked.call_type === "video"]
@@ -526,9 +542,19 @@ export class MeetingsService {
         targetUserId: targetPublicId,
         to: role
       });
+      if (!canPublish && participant.screen_share_status !== "off") {
+        await this.event(client, meetingId, principal.internalUserId, participant.user_id, "meeting.screen_share_stopped", {
+          reason: "permission_changed"
+        });
+        await this.audit(client, locked.organization_id, principal.internalUserId, meetingId, "meeting.screen_share_stopped", {
+          reason: "permission_changed",
+          targetUserId: targetPublicId
+        });
+      }
       return {
         changed: true,
         joined: participant.participant_status === "joined",
+        keepScreenShare: canPublish && participant.screen_share_status !== "off",
         providerIdentity: participant.provider_identity,
         roomName: locked.provider_room_name
       };
@@ -539,14 +565,17 @@ export class MeetingsService {
           changed.roomName,
           changed.providerIdentity,
           role !== "attendee",
-          role !== "attendee" && (await this.meetingType(meetingId)) === "video"
+          role !== "attendee" && (await this.meetingType(meetingId)) === "video",
+          changed.keepScreenShare
         );
       } catch {
         await this.livekit.removeParticipant(changed.roomName, changed.providerIdentity).catch(() => undefined);
         await this.database.transaction(async (client) => {
           await client.query(
             `update call_participants
-             set status = 'removed', left_at = now(), token_version = token_version + 1, updated_at = now()
+             set status = 'removed', left_at = now(), screen_share_status = 'off',
+                 screen_share_ended_at = case when screen_share_status <> 'off' then now() else screen_share_ended_at end,
+                 token_version = token_version + 1, updated_at = now()
              where call_session_id = $1 and provider_identity = $2`,
             [meetingId, changed.providerIdentity]
           );
@@ -633,6 +662,142 @@ export class MeetingsService {
     });
   }
 
+  async startScreenShare(principal: AuthPrincipal, meetingId: string): Promise<MeetingView> {
+    const prepared = await this.database.transaction(async (client) => {
+      const locked = await this.lockParticipant(client, principal, meetingId);
+      if (locked.status !== "active" || locked.participant_status !== "joined") {
+        throw new ConflictException("Join the active meeting before sharing a screen.");
+      }
+      if (!["host", "cohost", "speaker"].includes(locked.role)) {
+        throw new ForbiddenException("Only the host, cohost, or speaker may share a screen.");
+      }
+      if (locked.screen_share_status !== "off") return { changed: false, locked };
+      const current = await client.query<{ user_id: string }>(
+        `select user_id from call_participants
+         where call_session_id = $1 and screen_share_status in ('starting', 'active')
+         limit 1`,
+        [meetingId]
+      );
+      if (current.rowCount) throw new ConflictException("Another participant is already sharing a screen.");
+      await client.query(
+        `update call_participants
+         set screen_share_status = 'starting', screen_share_requested_at = now(),
+             screen_share_started_at = null, screen_share_ended_at = null, updated_at = now()
+         where call_session_id = $1 and user_id = $2`,
+        [meetingId, principal.internalUserId]
+      );
+      await this.event(client, meetingId, principal.internalUserId, principal.internalUserId, "meeting.screen_share_requested");
+      await this.audit(client, locked.organization_id, principal.internalUserId, meetingId, "meeting.screen_share_requested");
+      await this.enqueue(client, meetingId);
+      return { changed: true, locked };
+    });
+    if (!prepared.changed) return this.get(principal, meetingId);
+
+    try {
+      await this.livekit.updateParticipantPermissions(
+        prepared.locked.provider_room_name,
+        prepared.locked.provider_identity,
+        prepared.locked.can_publish_audio,
+        prepared.locked.can_publish_video,
+        true
+      );
+    } catch {
+      await this.database.transaction(async (client) => {
+        await client.query(
+          `update call_participants
+           set screen_share_status = 'off', screen_share_ended_at = now(), updated_at = now()
+           where call_session_id = $1 and user_id = $2 and screen_share_status = 'starting'`,
+          [meetingId, principal.internalUserId]
+        );
+        await this.event(client, meetingId, principal.internalUserId, principal.internalUserId, "meeting.screen_share_provider_grant_failed");
+        await this.audit(client, prepared.locked.organization_id, principal.internalUserId, meetingId, "meeting.screen_share_provider_grant_failed");
+        await this.enqueue(client, meetingId);
+      });
+      throw new ServiceUnavailableException("Screen sharing permission could not be granted. Try again.");
+    }
+    return this.get(principal, meetingId);
+  }
+
+  async confirmScreenShare(principal: AuthPrincipal, meetingId: string): Promise<MeetingView> {
+    return this.database.transaction(async (client) => {
+      const locked = await this.lockParticipant(client, principal, meetingId);
+      if (locked.status !== "active" || locked.participant_status !== "joined") {
+        throw new ConflictException("The participant is no longer connected to this meeting.");
+      }
+      if (!["host", "cohost", "speaker"].includes(locked.role)) {
+        throw new ForbiddenException("This meeting role cannot publish a shared screen.");
+      }
+      if (locked.screen_share_status === "off") {
+        throw new ConflictException("Request screen sharing permission before publishing a screen.");
+      }
+      if (locked.screen_share_status === "starting") {
+        await client.query(
+          `update call_participants
+           set screen_share_status = 'active', screen_share_started_at = coalesce(screen_share_started_at, now()),
+               updated_at = now()
+           where call_session_id = $1 and user_id = $2`,
+          [meetingId, principal.internalUserId]
+        );
+        await this.event(client, meetingId, principal.internalUserId, principal.internalUserId, "meeting.screen_share_started");
+        await this.audit(client, locked.organization_id, principal.internalUserId, meetingId, "meeting.screen_share_started");
+        await this.enqueue(client, meetingId);
+      }
+      return this.project(client, meetingId, principal.internalUserId);
+    });
+  }
+
+  async stopScreenShare(
+    principal: AuthPrincipal,
+    meetingId: string,
+    reason: ScreenShareStopReason
+  ): Promise<MeetingView> {
+    const prepared = await this.database.transaction(async (client) => {
+      const locked = await this.lockParticipant(client, principal, meetingId);
+      if (locked.screen_share_status === "off") return { changed: false, locked };
+      await client.query(
+        `update call_participants
+         set screen_share_status = 'off', screen_share_ended_at = now(), updated_at = now()
+         where call_session_id = $1 and user_id = $2`,
+        [meetingId, principal.internalUserId]
+      );
+      await this.event(client, meetingId, principal.internalUserId, principal.internalUserId, "meeting.screen_share_stopped", { reason });
+      await this.audit(client, locked.organization_id, principal.internalUserId, meetingId, "meeting.screen_share_stopped", { reason });
+      await this.enqueue(client, meetingId);
+      return { changed: true, locked };
+    });
+    if (!prepared.changed) return this.get(principal, meetingId);
+
+    try {
+      await this.livekit.updateParticipantPermissions(
+        prepared.locked.provider_room_name,
+        prepared.locked.provider_identity,
+        prepared.locked.can_publish_audio,
+        prepared.locked.can_publish_video,
+        false
+      );
+    } catch {
+      await this.livekit.removeParticipant(
+        prepared.locked.provider_room_name,
+        prepared.locked.provider_identity
+      ).catch(() => undefined);
+      await this.database.transaction(async (client) => {
+        await client.query(
+          `update call_participants
+           set status = 'removed', left_at = now(), screen_share_status = 'off',
+               screen_share_ended_at = coalesce(screen_share_ended_at, now()),
+               token_version = token_version + 1, updated_at = now()
+           where call_session_id = $1 and user_id = $2 and status in ('connecting', 'joined')`,
+          [meetingId, principal.internalUserId]
+        );
+        await this.event(client, meetingId, principal.internalUserId, principal.internalUserId, "meeting.screen_share_provider_revoke_failed");
+        await this.audit(client, prepared.locked.organization_id, principal.internalUserId, meetingId, "meeting.screen_share_provider_revoke_failed");
+        await this.enqueue(client, meetingId);
+      });
+      throw new ServiceUnavailableException("Screen sharing was stopped locally, but the media permission could not be synchronized. The participant was disconnected.");
+    }
+    return this.get(principal, meetingId);
+  }
+
   async leave(principal: AuthPrincipal, meetingId: string): Promise<MeetingView> {
     await this.expire(meetingId);
     const result = await this.database.transaction(async (client) => {
@@ -645,7 +810,9 @@ export class MeetingsService {
       }
       await client.query(
         `update call_participants
-         set status = 'left', left_at = now(), token_version = token_version + 1, updated_at = now()
+         set status = 'left', left_at = now(), screen_share_status = 'off',
+             screen_share_ended_at = case when screen_share_status <> 'off' then now() else screen_share_ended_at end,
+             token_version = token_version + 1, updated_at = now()
          where call_session_id = $1 and user_id = $2`,
         [meetingId, principal.internalUserId]
       );
@@ -763,7 +930,8 @@ export class MeetingsService {
       `select c.organization_id, c.created_by, c.call_type, c.provider_room_name,
               c.status, c.version, c.expires_at, c.lobby_opens_at, c.occurrence_ends_at,
               cp.role, cp.status as participant_status, cp.event_response_status,
-              cp.provider_identity, cp.can_publish_audio, cp.can_publish_video
+              cp.provider_identity, cp.can_publish_audio, cp.can_publish_video,
+              cp.screen_share_status
        from call_sessions c
        join call_participants cp on cp.call_session_id = c.id and cp.user_id = $2
        where c.id = $1 and c.organization_id = $3 and c.session_kind = 'scheduled_meeting'
@@ -793,7 +961,8 @@ export class MeetingsService {
     if (!meeting) throw new NotFoundException("Scheduled meeting was not found.");
     const participantResult = await client.query<MeetingParticipantRow>(
       `select cp.user_id, cp.role, cp.status, cp.provider_identity,
-              cp.can_publish_audio, cp.can_publish_video, cp.event_response_status,
+              cp.can_publish_audio, cp.can_publish_video, cp.screen_share_status,
+              cp.screen_share_started_at, cp.event_response_status,
               cp.invited_at, cp.waiting_at, cp.admitted_at, cp.joined_at, cp.left_at,
               u.public_id, u.display_name,
               p.public_profile_json ->> 'characterId' as character_id
@@ -819,6 +988,10 @@ export class MeetingsService {
       canJoin: !terminal && open && ["admitted", "connecting", "joined"].includes(viewer.status),
       canLeave: !terminal && ["waiting", "admitted", "connecting", "joined"].includes(viewer.status),
       canManageRoles: !terminal && viewer.role === "host" && meeting.created_by === viewerInternalId,
+      canShareScreen: !terminal
+        && meeting.status === "active"
+        && viewer.status === "joined"
+        && ["host", "cohost", "speaker"].includes(viewer.role),
       canOpen: !terminal
         && ["scheduled", "starting"].includes(meeting.status)
         && moderator
@@ -853,6 +1026,8 @@ export class MeetingsService {
           id: participant.public_id
         },
         role: participant.role,
+        ...(participant.screen_share_started_at ? { screenShareStartedAt: participant.screen_share_started_at.toISOString() } : {}),
+        screenShareStatus: participant.screen_share_status,
         status: participant.status,
         ...(participant.waiting_at ? { waitingAt: participant.waiting_at.toISOString() } : {})
       })),
@@ -897,6 +1072,8 @@ export class MeetingsService {
         `update call_participants set
            status = case when status = 'declined' then status else 'missed' end,
            left_at = case when status in ('waiting', 'admitted', 'connecting', 'joined') then now() else left_at end,
+           screen_share_status = 'off',
+           screen_share_ended_at = case when screen_share_status <> 'off' then now() else screen_share_ended_at end,
            token_version = token_version + 1, updated_at = now()
          where call_session_id = $1`,
         [meetingId]
@@ -941,6 +1118,8 @@ export class MeetingsService {
              when status in ('waiting', 'admitted', 'connecting') then 'removed'
              else status end,
            left_at = case when status in ('waiting', 'admitted', 'connecting', 'joined') then now() else left_at end,
+           screen_share_status = 'off',
+           screen_share_ended_at = case when screen_share_status <> 'off' then now() else screen_share_ended_at end,
            token_version = token_version + 1, updated_at = now()
          where call_session_id = $1`,
         [meetingId]
@@ -977,6 +1156,8 @@ export class MeetingsService {
            when status in ('waiting', 'admitted', 'connecting') then 'removed'
            else status end,
          left_at = case when status in ('waiting', 'admitted', 'connecting', 'joined') then now() else left_at end,
+         screen_share_status = 'off',
+         screen_share_ended_at = case when screen_share_status <> 'off' then now() else screen_share_ended_at end,
          token_version = token_version + 1, updated_at = now()
        where call_session_id = $1`,
       [meetingId]

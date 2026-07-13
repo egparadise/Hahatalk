@@ -56,6 +56,7 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Authenticated user-specific Socket.IO rooms instead of hub-wide message broadcast.
 - Authenticated PDF.js/image/video/audio/text previews, durable PC capture, and independent document/media windows.
 - Calendar-bound scheduled meetings with exact occurrence snapshots, moderated waiting rooms, role-scoped LiveKit tokens, and live participant permission updates.
+- Explicit one-at-a-time screen-share grants, source-separated screen/camera stages, in-session device switching, and on-device MediaPipe background blur/image processing.
 - Repo-local AGENTS, Skill, Agents, Hooks, schema validation, and harness loop.
 
 ## Production Boundaries Still Required
@@ -64,7 +65,7 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Move the single-process outbox publisher to a leased multi-replica worker before horizontal API scaling.
 - Add Redis presence without exposing hub participants to one another.
 - Add the managed S3 adapter, production ClamAV service, retention policy, OCR/Office conversion, and video/audio derivative workers.
-- Deploy a trusted LiveKit `wss` and TURN/TLS service; Stages 6B-6C provide short-lived call/meeting tokens, durable state, lobby admission, and role permissions. Webhook reconciliation, E2EE key policy, and consented recording remain later work.
+- Deploy a trusted LiveKit `wss` and TURN/TLS service; Stages 6B-6D provide short-lived call/meeting tokens, durable state, lobby admission, role permissions, and explicit video-only screen sharing. Webhook reconciliation, E2EE key policy, and consented recording remain later work.
 - Add AI worker services; chat must never await them.
 - Add a support-agent security review before remote control code is enabled.
 

@@ -29,7 +29,9 @@ import {
 import type {
   CallType,
   MeetingRoleAssignment,
-  ScheduleMeetingInput
+  ScheduleMeetingInput,
+  ScreenShareStopReason,
+  StopScreenShareInput
 } from "@hahatalk/contracts";
 import { CurrentAuth } from "../auth/auth.decorators.js";
 import type { AuthPrincipal } from "../auth/auth.types.js";
@@ -78,6 +80,11 @@ class VersionDto {
 class MeetingRoleDto extends VersionDto {
   @IsIn(["cohost", "speaker", "attendee"])
   role: MeetingRoleAssignment["role"] = "attendee";
+}
+
+class StopScreenShareDto implements StopScreenShareInput {
+  @IsIn(["user_stopped", "capture_cancelled", "track_ended", "publish_failed", "permission_changed"])
+  reason: ScreenShareStopReason = "user_stopped";
 }
 
 @Controller("meetings")
@@ -165,6 +172,28 @@ export class MeetingsController {
   @HttpCode(HttpStatus.OK)
   connected(@Param("meetingId", ParseUUIDPipe) meetingId: string, @CurrentAuth() principal: AuthPrincipal) {
     return this.meetings.connected(principal, meetingId);
+  }
+
+  @Post(":meetingId/screen-share/start")
+  @HttpCode(HttpStatus.OK)
+  startScreenShare(@Param("meetingId", ParseUUIDPipe) meetingId: string, @CurrentAuth() principal: AuthPrincipal) {
+    return this.meetings.startScreenShare(principal, meetingId);
+  }
+
+  @Post(":meetingId/screen-share/active")
+  @HttpCode(HttpStatus.OK)
+  confirmScreenShare(@Param("meetingId", ParseUUIDPipe) meetingId: string, @CurrentAuth() principal: AuthPrincipal) {
+    return this.meetings.confirmScreenShare(principal, meetingId);
+  }
+
+  @Post(":meetingId/screen-share/stop")
+  @HttpCode(HttpStatus.OK)
+  stopScreenShare(
+    @Param("meetingId", ParseUUIDPipe) meetingId: string,
+    @Body() body: StopScreenShareDto,
+    @CurrentAuth() principal: AuthPrincipal
+  ) {
+    return this.meetings.stopScreenShare(principal, meetingId, body.reason);
   }
 
   @Post(":meetingId/leave")

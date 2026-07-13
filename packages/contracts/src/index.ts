@@ -51,6 +51,13 @@ export type CallType = "voice" | "video";
 export type CallStatus = "starting" | "ringing" | "active" | "ended" | "cancelled" | "failed" | "expired";
 export type CallParticipantStatus = "invited" | "connecting" | "joined" | "declined" | "left" | "removed" | "missed";
 export type CallParticipantRole = "host" | "participant";
+export type ScreenShareStatus = "off" | "starting" | "active";
+export type ScreenShareStopReason =
+  | "user_stopped"
+  | "capture_cancelled"
+  | "track_ended"
+  | "publish_failed"
+  | "permission_changed";
 export type MeetingStatus = "scheduled" | "starting" | "lobby_open" | "active" | "ended" | "cancelled" | "failed" | "expired";
 export type MeetingRole = "host" | "cohost" | "speaker" | "attendee";
 export type MeetingParticipantStatus =
@@ -652,6 +659,8 @@ export interface CallParticipantView {
   person: Pick<User, "id" | "displayName" | "character">;
   role: CallParticipantRole;
   status: CallParticipantStatus;
+  screenShareStatus: ScreenShareStatus;
+  screenShareStartedAt?: string;
   isSelf: boolean;
   invitedAt: string;
   joinedAt?: string;
@@ -670,6 +679,7 @@ export interface CallView {
   canDecline: boolean;
   canLeave: boolean;
   canEnd: boolean;
+  canShareScreen: boolean;
   participants: CallParticipantView[];
   createdAt: string;
   expiresAt: string;
@@ -706,6 +716,8 @@ export interface MeetingParticipantView {
   isSelf: boolean;
   canPublishAudio: boolean;
   canPublishVideo: boolean;
+  screenShareStatus: ScreenShareStatus;
+  screenShareStartedAt?: string;
   invitedAt: string;
   waitingAt?: string;
   admittedAt?: string;
@@ -735,6 +747,7 @@ export interface MeetingView {
   canEnd: boolean;
   canAdmit: boolean;
   canManageRoles: boolean;
+  canShareScreen: boolean;
   participants: MeetingParticipantView[];
   waitingCount?: number;
   createdAt: string;
@@ -757,6 +770,10 @@ export interface MeetingJoinView {
   serverUrl: string;
   token: string;
   tokenExpiresAt: string;
+}
+
+export interface StopScreenShareInput {
+  reason: ScreenShareStopReason;
 }
 
 export interface MvpSnapshot extends ConversationView {

@@ -367,8 +367,18 @@ try {
     JSON.stringify(junClaims.video?.canPublishSources) === JSON.stringify(["microphone", "camera"]),
     "Speaker token was not source-limited to microphone and camera."
   );
+  assert(!JSON.stringify(junClaims.video?.canPublishSources).includes("screen_share"), "Initial meeting token granted screen sharing before an explicit request.");
   assert(!junClaims.video?.roomAdmin && !junClaims.video?.canPublishData, "Speaker token granted moderation or data publishing.");
-  await mutate(baseUrl, webOrigin, jun.cookie, `/meetings/${meeting.id}/connected`, {});
+  const junConnected = await mutate(baseUrl, webOrigin, jun.cookie, `/meetings/${meeting.id}/connected`, {});
+  assert(junConnected.canShareScreen, "Connected speaker did not receive the screen-share capability.");
+  await mutate(baseUrl, webOrigin, jun.cookie, `/meetings/${meeting.id}/screen-share/active`, {}, "POST", 409);
+  const missingScreenPublisher = await mutate(baseUrl, webOrigin, jun.cookie, `/meetings/${meeting.id}/screen-share/start`, {}, "POST", 503);
+  assert(String(missingScreenPublisher.message).includes("Screen sharing permission"), "Missing provider speaker did not roll back the screen-share request.");
+  const rolledBackSpeaker = await request(baseUrl, `/meetings/${meeting.id}`, { cookie: jun.cookie });
+  assert(
+    rolledBackSpeaker.body.participants.find((participant) => participant.isSelf)?.screenShareStatus === "off",
+    "Meeting provider grant failure left the speaker screen share locked."
+  );
 
   const ownerJoin = await mutate(baseUrl, webOrigin, owner.cookie, `/meetings/${meeting.id}/join`, {});
   const ownerClaims = await new TokenVerifier(apiKey, apiSecret).verify(ownerJoin.token);
@@ -438,6 +448,9 @@ try {
   const guestJoin = await mutate(baseUrl, webOrigin, hana.cookie, `/meetings/${guestMeeting.id}/join`, {});
   const guestClaims = await new TokenVerifier(apiKey, apiSecret).verify(guestJoin.token);
   assert(guestClaims.video?.canPublish === false && guestClaims.video?.canSubscribe === true, "Guest attendee token was not subscribe-only.");
+  const guestConnected = await mutate(baseUrl, webOrigin, hana.cookie, `/meetings/${guestMeeting.id}/connected`, {});
+  assert(!guestConnected.canShareScreen, "Guest attendee projection exposed screen sharing.");
+  await mutate(baseUrl, webOrigin, hana.cookie, `/meetings/${guestMeeting.id}/screen-share/start`, {}, "POST", 403);
   const guestProjection = JSON.stringify(guestJoin.meeting);
   assert(guestJoin.meeting.participants.length === 2 && !guestProjection.includes(mina.userId) && !guestProjection.includes(jun.userId), "Hidden hub guest projection leaked another spoke.");
   const guestCurrent = await request(baseUrl, `/meetings/${guestMeeting.id}`, { cookie: owner.cookie });
@@ -495,6 +508,8 @@ try {
 
   const migration = await database.query("select checksum from schema_migrations where version = '008_scheduled_meeting_lobby.sql'");
   assert(migration.rowCount === 1 && /^[0-9a-f]{64}$/.test(migration.rows[0].checksum), "Migration 008 checksum evidence is missing.");
+  const screenMigration = await database.query("select checksum from schema_migrations where version = '009_screen_share_device_background.sql'");
+  assert(screenMigration.rowCount === 1 && /^[0-9a-f]{64}$/.test(screenMigration.rows[0].checksum), "Migration 009 checksum evidence is missing.");
   const audit = await database.query(
     `select action, metadata_json::text as metadata from audit_logs
      where target_type = 'call_session' and action like 'meeting.%' order by created_at`
@@ -505,6 +520,8 @@ try {
     "meeting.participant_waiting",
     "meeting.participant_admitted",
     "meeting.participant_joined",
+    "meeting.screen_share_requested",
+    "meeting.screen_share_provider_grant_failed",
     "meeting.role_changed",
     "meeting.role_provider_sync_failed",
     "meeting.ended",
@@ -516,7 +533,7 @@ try {
   const durableText = JSON.stringify({ audit: audit.rows, outbox: outbox.rows });
   assert(!durableText.includes(apiSecret) && !durableText.includes("eyJ") && !durableText.includes(groupRoomName), "Meeting audit/outbox exposed a secret, token, or provider room name.");
 
-  console.log("Scheduled meeting lobby integration passed: occurrence binding, roles, waiting/admission, token grants, hub privacy, guest boundary, restart, provider failure, and audit verified.");
+  console.log("Scheduled meeting integration passed: occurrence binding, roles, screen-share role boundaries and grant rollback, waiting/admission, scoped tokens, hub privacy, guest boundary, restart, provider failure, and audit verified.");
 } finally {
   ownerSocket?.close();
   await stopChild(api?.child).catch(() => undefined);

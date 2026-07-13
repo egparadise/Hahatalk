@@ -5,7 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { RoomServiceClient } from "livekit-server-sdk";
+import { RoomServiceClient, TrackSource } from "livekit-server-sdk";
 
 function argument(name, fallback) {
   const prefix = `--${name}=`;
@@ -150,7 +150,12 @@ async function connectCdp(webSocketUrl) {
 }
 
 async function evaluate(cdp, expression) {
-  const result = await cdp.send("Runtime.evaluate", { awaitPromise: true, expression, returnByValue: true });
+  let result;
+  try {
+    result = await cdp.send("Runtime.evaluate", { awaitPromise: true, expression, returnByValue: true });
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\nExpression: ${expression}`);
+  }
   if (result.exceptionDetails) {
     throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? "Renderer evaluation failed.");
   }
@@ -236,6 +241,27 @@ async function startCallAs(runtime, cookie, targetUserId) {
   return JSON.parse(text);
 }
 
+async function apiRequest(runtime, cookie, pathName, { expected = 200, method = "GET", payload } = {}) {
+  const response = await fetch(`${runtime.apiUrl}${pathName}`, {
+    ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}),
+    headers: {
+      "Cookie": cookie,
+      ...(payload !== undefined ? {
+        "Content-Type": "application/json",
+        "Origin": runtime.webUrl,
+        "X-HahaTalk-Client": "web-v1"
+      } : {})
+    },
+    method,
+    signal: AbortSignal.timeout(20_000)
+  });
+  const text = await response.text();
+  let body;
+  try { body = text ? JSON.parse(text) : undefined; } catch { body = text; }
+  assert(response.status === expected, `${method} ${pathName} expected ${expected}, got ${response.status}: ${text}`);
+  return body;
+}
+
 async function waitForParticipant(roomClient) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const rooms = await roomClient.listRooms();
@@ -246,6 +272,21 @@ async function waitForParticipant(roomClient) {
     await delay(125);
   }
   throw new Error("Installed renderer did not join the actual LiveKit room.");
+}
+
+async function waitForScreenShare(roomClient, expected) {
+  for (let attempt = 0; attempt < 160; attempt += 1) {
+    const rooms = await roomClient.listRooms();
+    if (rooms[0]) {
+      const participants = await roomClient.listParticipants(rooms[0].name);
+      const participant = participants[0];
+      const screenTrack = participant?.tracks?.some((track) => track.source === TrackSource.SCREEN_SHARE) ?? false;
+      const screenPermission = participant?.permission?.canPublishSources?.includes(TrackSource.SCREEN_SHARE) ?? false;
+      if (participant && screenTrack === expected && screenPermission === expected) return participant;
+    }
+    await delay(125);
+  }
+  throw new Error(`Installed renderer screen share did not reach expected=${expected}.`);
 }
 
 async function stopChild(child) {
@@ -268,7 +309,7 @@ const executablePath = path.resolve(argument(
 ));
 const screenshotPath = path.resolve(argument(
   "screenshot",
-  path.join(process.cwd(), "apps", "desktop", "out", "stage6b-active-video-call.png")
+  path.join(process.cwd(), "apps", "desktop", "out", "stage6d-screen-share-background.png")
 ));
 const livekitExecutable = path.join(process.env.LOCALAPPDATA ?? "", "HahaTalkDev", "LiveKit", "1.13.3", "livekit-server.exe");
 const password = "Stage6B!RendererOwner";
@@ -324,6 +365,7 @@ try {
   );
   const providerState = await waitForParticipant(livekit.client);
   assert(providerState.participants[0].identity !== owner.body.user.id, "Installed renderer exposed the stable app user id to LiveKit.");
+  assert(!providerState.participants[0].permission?.canPublishSources?.includes(TrackSource.SCREEN_SHARE), "Initial installed call permission included screen sharing.");
   await waitForExpression(
     cdp,
     "document.querySelector('.call-video')?.videoWidth > 0 && document.querySelector('.call-video')?.videoHeight > 0",
@@ -351,7 +393,55 @@ try {
   await waitForExpression(cdp, "document.querySelector('button[title=\"마이크 켜기\"]') !== null", "Installed microphone toggle did not update.");
   await evaluate(cdp, "document.querySelector('button[title=\"마이크 켜기\"]').click()");
   await waitForExpression(cdp, "document.querySelector('button[title=\"마이크 끄기\"]') !== null", "Installed microphone did not turn back on.");
+
+  await evaluate(cdp, "document.querySelector('button[title=\"미디어 장치 및 배경\"]').click()");
+  await waitForExpression(
+    cdp,
+    "document.querySelectorAll('.live-device-select select').length >= 2 && [...document.querySelectorAll('.live-device-select select')].every((select) => select.options.length >= 1)",
+    "Installed media device selectors did not enumerate microphone and camera."
+  );
+  const persistedDeviceData = await evaluate(cdp, "Object.keys(localStorage).some((key) => /device|camera|microphone|speaker/i.test(key))");
+  assert(!persistedDeviceData, "Installed media settings persisted a device identifier.");
+  await evaluate(cdp, "[...document.querySelectorAll('.camera-effect-control button')].find((button) => button.innerText.includes('흐림')).click()");
+  await waitForExpression(
+    cdp,
+    "[...document.querySelectorAll('.camera-effect-control button')].some((button) => button.dataset.active === 'true' && button.innerText.includes('흐림'))",
+    "Installed local MediaPipe background blur did not become active.",
+    320
+  );
+  await waitForExpression(cdp, "document.querySelector('.call-media-tile .call-video')?.videoWidth > 0", "Processed camera frames became blank after background blur.", 160);
+  await evaluate(cdp, "document.querySelector('button[title=\"미디어 장치 및 배경\"]').click()");
+
+  await evaluate(cdp, "document.querySelector('button[title=\"화면 공유\"]').click()");
+  await waitForExpression(
+    cdp,
+    "document.querySelector('.screen-share-stage .call-video')?.videoWidth > 0 && Boolean(document.querySelector('button[title=\"화면 공유 중지\"]'))",
+    "Installed desktop screen picker did not publish a visible screen track.",
+    240
+  );
+  await waitForScreenShare(livekit.client, true);
+  const activeShare = await apiRequest(runtime, owner.cookie, `/calls/${started.id}`);
+  assert(activeShare.participants.find((participant) => participant.isSelf)?.screenShareStatus === "active", "Installed call did not persist the active screen-share state.");
+  await apiRequest(runtime, mina.cookie, `/calls/${started.id}/join`, { method: "POST", payload: {} });
+  await apiRequest(runtime, mina.cookie, `/calls/${started.id}/connected`, { method: "POST", payload: {} });
+  await apiRequest(runtime, mina.cookie, `/calls/${started.id}/screen-share/start`, { expected: 409, method: "POST", payload: {} });
+  const screenLayout = await evaluate(cdp, `
+    (() => {
+      const header = document.querySelector('.call-desk-header').getBoundingClientRect();
+      const stage = document.querySelector('.screen-share-stage').getBoundingClientRect();
+      const grid = document.querySelector('.call-media-grid').getBoundingClientRect();
+      const controls = document.querySelector('.call-controls').getBoundingClientRect();
+      return header.bottom <= stage.top + 1 && stage.bottom <= grid.top + 1 && grid.bottom <= controls.top + 1;
+    })()
+  `);
+  assert(screenLayout, "Installed screen-share stage overlaps the header, participant grid, or controls.");
   await captureScreenshot(cdp, screenshotPath);
+
+  await evaluate(cdp, "document.querySelector('.screen-share-banner button').click()");
+  await waitForExpression(cdp, "!document.querySelector('.screen-share-stage') && Boolean(document.querySelector('button[title=\"화면 공유\"]'))", "Installed screen share did not stop immediately.", 200);
+  await waitForScreenShare(livekit.client, false);
+  const stoppedShare = await apiRequest(runtime, owner.cookie, `/calls/${started.id}`);
+  assert(stoppedShare.participants.find((participant) => participant.isSelf)?.screenShareStatus === "off", "Installed call retained screen-share state after stop.");
 
   await evaluate(cdp, "document.querySelector('button[title=\"통화 나가기\"]').click()");
   await waitForExpression(cdp, "document.querySelector('.call-desk[data-phase=\"ended\"]') !== null", "Installed participant leave did not end the call.");
@@ -367,7 +457,7 @@ try {
   for (let attempt = 0; attempt < 80 && isProcessRunning(application.pid); attempt += 1) await delay(125);
   assert(!isProcessRunning(application.pid), "Installed call renderer process remained after shutdown.");
   assert(!(await isPortOpen(runtime.databasePort)), "Installed call renderer PostgreSQL remained reachable after shutdown.");
-  console.log(`Windows installed LiveKit renderer passed: incoming UI, real SFU join, fake camera, mic toggle, leave, layout, and screenshot ${screenshotPath}`);
+  console.log(`Windows installed LiveKit renderer passed: real SFU, device selectors, local background blur, explicit screen share, singleton denial, stop, leave, layout, and screenshot ${screenshotPath}`);
 } finally {
   if (isProcessRunning(application.pid)) {
     await Promise.race([

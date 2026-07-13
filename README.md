@@ -24,6 +24,8 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - A timezone-safe PC calendar desk with private, selected, and exact current-room snapshot schedules, bounded recurrence, RSVP, reminders, optimistic edits, cancellation, and pop-out windows.
 - LiveKit-backed ad-hoc voice/video calls with exact conversation snapshots, short-lived least-privilege tokens, incoming-call realtime state, microphone/camera controls, reconnect UI, and host/participant end paths.
 - Calendar-bound scheduled meetings with an exact occurrence snapshot, waiting lobby, admission, host/cohost/speaker/attendee roles, subscribe-only attendees, and live permission revocation.
+- Explicit one-at-a-time screen sharing with a visible shared-screen stage, scheduled-meeting role checks, immediate stop/revoke, and audit history.
+- Active-call camera/microphone/speaker selection plus locally packaged MediaPipe background blur or a temporary user-selected image; device IDs and background images are not persisted.
 - Hidden-hub calls remain owner-to-one-spoke in Stage 6B so no other spoke identity can appear in a provider room; open groups support exact multi-user call snapshots.
 - Internal and guest invite affordances with guest-safe permission labels.
 - Authenticated PDF.js, image, video, audio, and text previews without public storage URLs or third-party document viewers.
@@ -61,9 +63,11 @@ npm run calendar:integration
 npm run infra:livekit:portable
 npm run calls:integration
 npm run meetings:integration
+npm run screen-share:integration
 npm run desktop:renderer-smoke
 npm run desktop:call-renderer-smoke
 npm run desktop:meeting-renderer-smoke
+npm run desktop:stage6d-renderer-smoke
 npm run harness
 ```
 
@@ -107,4 +111,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-6a-schedule-rsvp-reminders.md`: Stage 6A timezone, recurrence, snapshot authorization, RSVP, reminders, calendar UX, and verification contract.
 - `docs/stage-6b-livekit-call-core.md`: Stage 6B call state, privacy projection, least-privilege tokens, LiveKit provider boundary, PC UX, and verification contract.
 - `docs/stage-6c-scheduled-meeting-lobby.md`: Stage 6C occurrence binding, lobby admission, media roles, live permission updates, PC UX, and verification contract.
+- `docs/stage-6d-screen-share-device-background.md`: Stage 6D explicit screen permission, device/background privacy, PC UX, and installed-renderer verification contract.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

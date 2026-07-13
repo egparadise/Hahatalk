@@ -39,6 +39,7 @@ The Next.js client is exported as static HTML/CSS/JavaScript. The compiled NestJ
 - CSP permits image/audio/video bytes only from the loopback API origin; `.mjs` is served as JavaScript for the same-origin PDF.js worker.
 - Camera, microphone, fullscreen, and display capture permissions are limited to runtime origins.
 - Screen capture requires a user gesture and a local source-selection dialog.
+- Camera background segmentation uses same-origin packaged MediaPipe WASM/model assets; camera frames and user-selected images are not uploaded by the processor.
 - The API is isolated from the renderer in Electron `utilityProcess`.
 - The renderer receives only an opaque HttpOnly cookie; authentication responses and preload APIs never expose the session token.
 - The embedded database binds only to loopback, uses a random SCRAM password, stores credentials with the per-user runtime state, and stops after the API during clean shutdown.
@@ -73,12 +74,13 @@ apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe
 - installed renderer uploads and previews an authenticated image, stores and renders a private PDF, opens it in a separate window, and writes originals/derivatives only under the private object root
 - renderer E2E sets `HAHATALK_USER_DATA_DIR` to a unique OS temporary profile, claims the seed owner there, and removes that profile after clean shutdown so automated accounts/media never enter the user's normal database
 - production dependency audit reports zero vulnerabilities
+- installed LiveKit renderers prove screen-track publication/stop, source permission revocation, local device menus, nonblank packaged background blur, and scheduled-role demotion cleanup
 
 ## Release Limitations
 
 - The current installer is unsigned. Windows code signing is required before external distribution to avoid trust warnings and to support a production update channel.
 - Accounts, sessions, invitations, consent evidence, conversations, deliveries, read state, idempotency, outbox events, and media metadata persist in embedded PostgreSQL. Binary media persists in the private per-user object root.
-- Runtime manifest version 5 records every immutable SQL migration and SHA-256 fingerprints for `pg_ctl.exe` and `initdb.exe`.
+- Runtime manifest version 6 records every immutable SQL migration and SHA-256 fingerprints for `pg_ctl.exe` and `initdb.exe`.
 - Managed S3 and production ClamAV remain deployment boundaries; the packaged local provider and bounded standalone scanner are the verified PC baseline.
 - The embedded database is a PC-first single-device topology. Multi-device sync and horizontal scaling require the managed server deployment.
 - The installer currently targets Windows x64. ARM64 is a later build target.

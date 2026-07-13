@@ -1,14 +1,10 @@
 "use client";
 
 import {
-  Camera,
-  CameraOff,
   Check,
   Crown,
   DoorOpen,
   LoaderCircle,
-  Mic,
-  MicOff,
   PhoneOff,
   RefreshCw,
   ShieldCheck,
@@ -29,6 +25,12 @@ import type {
   MeetingView
 } from "@hahatalk/contracts";
 import { getJson, postJson } from "../lib/api-client";
+import {
+  AttachedMediaVideo,
+  LiveMediaControls,
+  type LiveMediaControlsHandle,
+  ScreenShareStage
+} from "./live-media-controls";
 
 type MediaTrack = { identity: string; sid: string; track: RemoteTrack };
 type MeetingPhase = "connecting" | "active" | "reconnecting" | "ended" | "error";
@@ -188,8 +190,10 @@ export function MeetingRoom({ meeting, onClose, onUpdated }: {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [remoteTracks, setRemoteTracks] = useState<MediaTrack[]>([]);
   const [localVideoTrack, setLocalVideoTrack] = useState<LocalVideoTrack | undefined>();
+  const [localScreenTrack, setLocalScreenTrack] = useState<LocalVideoTrack | undefined>();
   const [busy, setBusy] = useState(false);
   const roomRef = useRef<Room | null>(null);
+  const mediaControlsRef = useRef<LiveMediaControlsHandle>(null);
   const intentionalDisconnectRef = useRef(false);
   const connectStartedRef = useRef(false);
   const self = meeting.participants.find((participant) => participant.isSelf);
@@ -230,6 +234,7 @@ export function MeetingRoom({ meeting, onClose, onUpdated }: {
       room.on(livekit.RoomEvent.Disconnected, () => {
         setRemoteTracks([]);
         setLocalVideoTrack(undefined);
+        setLocalScreenTrack(undefined);
         if (!intentionalDisconnectRef.current) {
           setError("미디어 연결이 종료되었습니다. 회의 상태를 다시 확인해 주세요.");
           setPhase("error");
@@ -299,6 +304,7 @@ export function MeetingRoom({ meeting, onClose, onUpdated }: {
     const room = roomRef.current;
     roomRef.current = null;
     try {
+      await mediaControlsRef.current?.prepareDisconnect();
       await room?.localParticipant.setCameraEnabled(false).catch(() => undefined);
       await room?.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
       room?.disconnect();
@@ -307,38 +313,6 @@ export function MeetingRoom({ meeting, onClose, onUpdated }: {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "회의에서 나가지 못했습니다.");
       setPhase("error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function toggleMicrophone() {
-    const room = roomRef.current;
-    if (!room || !self?.canPublishAudio) return;
-    setBusy(true);
-    try {
-      const enabled = !microphoneEnabled;
-      await room.localParticipant.setMicrophoneEnabled(enabled);
-      setMicrophoneEnabled(enabled);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "마이크를 전환하지 못했습니다.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function toggleCamera() {
-    const room = roomRef.current;
-    if (!room || !self?.canPublishVideo || meeting.callType !== "video") return;
-    setBusy(true);
-    try {
-      const enabled = !cameraEnabled;
-      const publication = await room.localParticipant.setCameraEnabled(enabled);
-      setLocalVideoTrack(enabled ? publication?.videoTrack : undefined);
-      setCameraEnabled(enabled && Boolean(publication?.videoTrack));
-      setCameraWarning("");
-    } catch (nextError) {
-      setCameraWarning(nextError instanceof Error ? nextError.message : "카메라를 전환하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -356,8 +330,12 @@ export function MeetingRoom({ meeting, onClose, onUpdated }: {
     }
   }
 
-  const videos = new Map(remoteTracks.filter((item) => item.track.kind === "video").map((item) => [item.identity, item.track]));
-  const audioTracks = remoteTracks.filter((item) => item.track.kind === "audio");
+  const videos = new Map(remoteTracks.filter((item) => item.track.kind === "video" && item.track.source === "camera").map((item) => [item.identity, item.track]));
+  const audioTracks = remoteTracks.filter((item) => item.track.kind === "audio" && item.track.source === "microphone");
+  const remoteScreen = remoteTracks.find((item) => item.track.kind === "video" && item.track.source === "screen_share");
+  const screenSharer = meeting.participants.find((participant) => participant.screenShareStatus !== "off")
+    ?? meeting.participants.find((participant) => participant.mediaIdentity === remoteScreen?.identity);
+  const screenTrack = screenSharer?.isSelf ? localScreenTrack : remoteScreen?.track;
   const visibleParticipants = meeting.participants.filter((participant) => ["admitted", "connecting", "joined"].includes(participant.status));
   const phaseLabel = phase === "connecting" ? "연결 중"
     : phase === "reconnecting" ? "네트워크 재연결 중"
@@ -371,12 +349,21 @@ export function MeetingRoom({ meeting, onClose, onUpdated }: {
         <div><span className="call-kicker">{meeting.callType === "video" ? "예약 영상 회의" : "예약 음성 회의"}</span><h2>{meeting.title}</h2><span className="call-phase">{phaseLabel} · {roleLabels[meeting.myRole]}</span></div>
         {phase === "ended" ? <button className="icon-button call-close" onClick={onClose} title="회의 화면 닫기" type="button"><X size={20} /></button> : null}
       </header>
+      {screenSharer ? (
+        <ScreenShareStage
+          busy={busy}
+          isSelf={screenSharer.isSelf}
+          onStop={() => void mediaControlsRef.current?.stopScreenShare()}
+          sharerName={screenSharer.isSelf ? "내" : `${screenSharer.person.displayName}님의`}
+          track={screenTrack}
+        />
+      ) : null}
       <div className="call-media-grid" data-count={Math.max(1, visibleParticipants.length)}>
         {visibleParticipants.map((participant) => {
           const videoTrack = participant.isSelf ? localVideoTrack : videos.get(participant.mediaIdentity);
           return (
             <div className="call-media-tile" data-self={participant.isSelf} key={participant.person.id}>
-              {videoTrack ? <AttachedVideo mirrored={participant.isSelf} track={videoTrack} /> : <div className="call-avatar-stage"><img alt="" src={participant.person.character.thumbnailUrl} /></div>}
+              {videoTrack ? <AttachedMediaVideo mirrored={participant.isSelf} track={videoTrack} /> : <div className="call-avatar-stage"><img alt="" src={participant.person.character.thumbnailUrl} /></div>}
               <div className="call-participant-label"><strong>{participant.person.displayName}{participant.isSelf ? " (나)" : ""}</strong><span>{roleLabels[participant.role]} · {meetingParticipantStatusLabel(participant.status)}</span></div>
             </div>
           );
@@ -389,8 +376,29 @@ export function MeetingRoom({ meeting, onClose, onUpdated }: {
       <footer className="call-controls">
         {["active", "reconnecting"].includes(phase) ? (
           <>
-            {self?.canPublishAudio ? <button className="call-control" data-enabled={microphoneEnabled} disabled={busy} onClick={() => void toggleMicrophone()} title={microphoneEnabled ? "마이크 끄기" : "마이크 켜기"} type="button">{microphoneEnabled ? <Mic size={21} /> : <MicOff size={21} />}</button> : null}
-            {self?.canPublishVideo && meeting.callType === "video" ? <button className="call-control" data-enabled={cameraEnabled} disabled={busy} onClick={() => void toggleCamera()} title={cameraEnabled ? "카메라 끄기" : "카메라 켜기"} type="button">{cameraEnabled ? <Camera size={21} /> : <CameraOff size={21} />}</button> : null}
+            <LiveMediaControls
+              active={phase === "active"}
+              busy={busy}
+              cameraEnabled={cameraEnabled}
+              cameraTrack={localVideoTrack}
+              canPublishAudio={Boolean(self?.canPublishAudio)}
+              canPublishVideo={Boolean(self?.canPublishVideo && meeting.callType === "video")}
+              canShareScreen={meeting.canShareScreen}
+              microphoneEnabled={microphoneEnabled}
+              onBusyChange={setBusy}
+              onCameraEnabledChange={setCameraEnabled}
+              onCameraTrackChange={setLocalVideoTrack}
+              onCameraWarning={setCameraWarning}
+              onError={setError}
+              onLocalScreenTrackChange={setLocalScreenTrack}
+              onMicrophoneEnabledChange={setMicrophoneEnabled}
+              onUpdated={(updated) => onUpdated(updated as MeetingView)}
+              ref={mediaControlsRef}
+              room={roomRef.current}
+              screenShareBlocked={Boolean(screenSharer && !screenSharer.isSelf)}
+              screenShareStatus={self?.screenShareStatus ?? "off"}
+              sessionPath={`/meetings/${meeting.id}`}
+            />
             <button className="call-control hangup" disabled={busy} onClick={() => void leave()} title="회의 나가기" type="button"><PhoneOff size={22} /></button>
           </>
         ) : null}
@@ -399,17 +407,6 @@ export function MeetingRoom({ meeting, onClose, onUpdated }: {
       </footer>
     </section>
   );
-}
-
-function AttachedVideo({ mirrored = false, track }: { mirrored?: boolean; track: LocalVideoTrack | RemoteTrack }) {
-  const ref = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    track.attach(element);
-    return () => { track.detach(element); };
-  }, [track]);
-  return <video autoPlay className="call-video" data-mirrored={mirrored} muted={mirrored} playsInline ref={ref} />;
 }
 
 function AttachedAudio({ track }: { track: RemoteTrack }) {
