@@ -13,7 +13,8 @@ const requiredFiles = [
   "apps/desktop/scripts/build-runtime.mjs",
   "apps/desktop/scripts/generate-windows-icon.ps1",
   "tools/harness/windows-package-smoke.ps1",
-  "tools/harness/windows-renderer-auth-smoke.mjs"
+  "tools/harness/windows-renderer-auth-smoke.mjs",
+  "tools/harness/windows-meeting-renderer-smoke.mjs"
 ];
 
 for (const relativePath of requiredFiles) {
@@ -58,6 +59,7 @@ if (requireRuntime) {
     path.join(desktopRoot, "runtime", "migrations", "002_invitation_consent_guest_approval.sql"),
     path.join(desktopRoot, "runtime", "migrations", "003_persisted_conversation_core.sql"),
     path.join(desktopRoot, "runtime", "migrations", "007_livekit_call_core.sql"),
+    path.join(desktopRoot, "runtime", "migrations", "008_scheduled_meeting_lobby.sql"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "initdb.exe"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "pg_ctl.exe"),
     path.join(desktopRoot, "runtime", "postgres", "server_license.txt"),

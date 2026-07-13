@@ -72,6 +72,7 @@ Invoke-CheckedCommand -Command @("npm", "run", "calendar:integration")
 if ($env:OS -eq "Windows_NT") {
   Invoke-CheckedCommand -Command @("npm", "run", "infra:livekit:portable")
   Invoke-CheckedCommand -Command @("npm", "run", "calls:integration")
+  Invoke-CheckedCommand -Command @("npm", "run", "meetings:integration")
 }
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
 

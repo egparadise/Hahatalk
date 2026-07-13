@@ -22,9 +22,12 @@ import {
   Users,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { io } from "socket.io-client";
 import {
   type AuthSession,
+  type CallCapabilities,
+  type CallType,
   type CalendarContext,
   type CalendarEventView,
   type CalendarEventVisibility,
@@ -35,9 +38,12 @@ import {
   type CalendarSpaceOption,
   type CalendarWindowView,
   type CreateCalendarEventInput,
+  type MeetingRole,
+  type MeetingView,
   type User
 } from "@hahatalk/contracts";
-import { getJson, postJson, requestJson } from "../lib/api-client";
+import { apiBaseUrl, getJson, postJson, requestJson } from "../lib/api-client";
+import { MeetingLobbyPanel, MeetingRoom } from "./meeting-desk";
 
 type CalendarDeskProps = {
   authSession: AuthSession;
@@ -111,6 +117,14 @@ export function CalendarDesk({ authSession, currentUser, onLogout, onOpenChat, o
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [meeting, setMeeting] = useState<MeetingView | null>(null);
+  const [meetingCapabilities, setMeetingCapabilities] = useState<CallCapabilities | null>(null);
+  const [meetingLoading, setMeetingLoading] = useState(false);
+  const [meetingError, setMeetingError] = useState("");
+  const [meetingBusy, setMeetingBusy] = useState("");
+  const [meetingCallType, setMeetingCallType] = useState<CallType>("video");
+  const [meetingRoleDrafts, setMeetingRoleDrafts] = useState<Record<string, Exclude<MeetingRole, "host">>>({});
+  const [activeMeetingId, setActiveMeetingId] = useState("");
 
   const gridDates = useMemo(() => calendarGrid(month), [month]);
   const occurrencesByDate = useMemo(() => {
@@ -152,6 +166,69 @@ export function CalendarDesk({ authSession, currentUser, onLogout, onOpenChat, o
   useEffect(() => {
     void refreshWindow(month);
   }, [month, authSession.user.id]);
+
+  useEffect(() => {
+    void getJson<CallCapabilities>("/meetings/capabilities")
+      .then(setMeetingCapabilities)
+      .catch((capabilityError) => setMeetingError(capabilityError instanceof Error ? capabilityError.message : "회의 기능을 확인하지 못했습니다."));
+  }, [authSession.user.id]);
+
+  useEffect(() => {
+    if (!selectedOccurrence) {
+      setMeeting(null);
+      setMeetingError("");
+      return;
+    }
+    let active = true;
+    setMeetingLoading(true);
+    setMeetingError("");
+    setMeetingRoleDrafts(Object.fromEntries(
+      (selectedOccurrence.attendees ?? []).map((attendee) => [attendee.person.id, "attendee" as const])
+    ));
+    const query = new URLSearchParams({
+      eventId: selectedOccurrence.id,
+      occurrenceStartsAt: selectedOccurrence.occurrenceStartsAt
+    });
+    void getJson<MeetingView | null>(`/meetings?${query}`)
+      .then((next) => {
+        if (active) setMeeting(next);
+      })
+      .catch((loadError) => {
+        if (active) setMeetingError(loadError instanceof Error ? loadError.message : "회의 상태를 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        if (active) setMeetingLoading(false);
+      });
+    return () => { active = false; };
+  }, [authSession.user.id, selectedOccurrence?.id, selectedOccurrence?.occurrenceStartsAt]);
+
+  useEffect(() => {
+    if (!selectedOccurrence) return;
+    const socket = io(apiBaseUrl, { transports: ["websocket"], withCredentials: true });
+    socket.on("connect", () => {
+      if (selectedOccurrence.space?.id) socket.emit("room:join", { spaceId: selectedOccurrence.space.id });
+    });
+    socket.on("meeting:updated", (next: MeetingView) => {
+      if (next.eventId === selectedOccurrence.id && next.occurrenceStartsAt === selectedOccurrence.occurrenceStartsAt) {
+        setMeeting(next);
+        setMeetingError("");
+      }
+    });
+    return () => { socket.close(); };
+  }, [authSession.user.id, selectedOccurrence?.id, selectedOccurrence?.occurrenceStartsAt, selectedOccurrence?.space?.id]);
+
+  useEffect(() => {
+    if (!meeting || !["starting", "lobby_open", "active"].includes(meeting.status)) return;
+    const meetingId = meeting.id;
+    const timer = window.setInterval(() => {
+      void getJson<MeetingView>(`/meetings/${meetingId}`)
+        .then((next) => {
+          setMeeting((current) => current?.id === meetingId ? next : current);
+        })
+        .catch(() => undefined);
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [meeting?.id, meeting?.status]);
 
   async function refreshWindow(targetMonth = month, preferredEventId?: string) {
     if (windowView.from) setIsRefreshing(true);
@@ -281,6 +358,107 @@ export function CalendarDesk({ authSession, currentUser, onLogout, onOpenChat, o
     }
   }
 
+  async function refreshMeeting() {
+    if (!selectedOccurrence) return;
+    setMeetingLoading(true);
+    setMeetingError("");
+    try {
+      const query = new URLSearchParams({
+        eventId: selectedOccurrence.id,
+        occurrenceStartsAt: selectedOccurrence.occurrenceStartsAt
+      });
+      setMeeting(await getJson<MeetingView | null>(`/meetings?${query}`));
+    } catch (loadError) {
+      setMeetingError(loadError instanceof Error ? loadError.message : "회의 상태를 불러오지 못했습니다.");
+    } finally {
+      setMeetingLoading(false);
+    }
+  }
+
+  async function scheduleMeeting() {
+    if (!selectedOccurrence) return;
+    setMeetingBusy("schedule");
+    setMeetingError("");
+    try {
+      const roleAssignments = Object.entries(meetingRoleDrafts)
+        .filter(([, role]) => role !== "attendee")
+        .map(([userId, role]) => ({ role, userId }));
+      const next = await postJson<MeetingView>("/meetings", {
+        callType: meetingCallType,
+        clientMeetingId: `meeting-${selectedOccurrence.id}-${selectedOccurrence.occurrenceStartsAt}`,
+        eventId: selectedOccurrence.id,
+        occurrenceStartsAt: selectedOccurrence.occurrenceStartsAt,
+        roleAssignments
+      });
+      setMeeting(next);
+      setNotice("회의를 예약했습니다.");
+    } catch (meetingActionError) {
+      setMeetingError(meetingActionError instanceof Error ? meetingActionError.message : "회의를 예약하지 못했습니다.");
+    } finally {
+      setMeetingBusy("");
+    }
+  }
+
+  async function runMeetingAction(action: string, path: string, payload: Record<string, unknown> = {}) {
+    setMeetingBusy(action);
+    setMeetingError("");
+    try {
+      const next = await postJson<MeetingView>(path, payload);
+      setMeeting(next);
+      return next;
+    } catch (meetingActionError) {
+      setMeetingError(meetingActionError instanceof Error ? meetingActionError.message : "회의 요청을 처리하지 못했습니다.");
+      return undefined;
+    } finally {
+      setMeetingBusy("");
+    }
+  }
+
+  async function changeMeetingRole(userId: string, role: Exclude<MeetingRole, "host">) {
+    if (!meeting) return;
+    setMeetingBusy(`role:${userId}`);
+    setMeetingError("");
+    try {
+      setMeeting(await requestJson<MeetingView>(`/meetings/${meeting.id}/participants/${encodeURIComponent(userId)}/role`, "PATCH", {
+        role,
+        version: meeting.version
+      }));
+    } catch (meetingActionError) {
+      setMeetingError(meetingActionError instanceof Error ? meetingActionError.message : "회의 역할을 변경하지 못했습니다.");
+    } finally {
+      setMeetingBusy("");
+    }
+  }
+
+  const meetingPanel = selectedOccurrence ? (
+    <MeetingLobbyPanel
+      busy={Boolean(meetingBusy)}
+      callType={meetingCallType}
+      capabilities={meetingCapabilities}
+      error={meetingError || (meetingCapabilities && !meetingCapabilities.available ? meetingCapabilities.reason ?? "회의 기능을 사용할 수 없습니다." : "")}
+      event={selectedOccurrence}
+      loading={meetingLoading}
+      meeting={meeting}
+      roleDrafts={meetingRoleDrafts}
+      onAdmit={(userId) => { if (meeting) void runMeetingAction(`admit:${userId}`, `/meetings/${meeting.id}/participants/${encodeURIComponent(userId)}/admit`); }}
+      onCallTypeChange={setMeetingCallType}
+      onChangeRole={(userId, role) => void changeMeetingRole(userId, role)}
+      onDeny={(userId) => { if (meeting) void runMeetingAction(`deny:${userId}`, `/meetings/${meeting.id}/participants/${encodeURIComponent(userId)}/deny`); }}
+      onEnd={() => {
+        if (meeting && window.confirm(`'${meeting.title}' 회의를 종료할까요?`)) {
+          void runMeetingAction("end", `/meetings/${meeting.id}/end`, { version: meeting.version });
+        }
+      }}
+      onEnter={() => { if (meeting) void runMeetingAction("enter", `/meetings/${meeting.id}/enter`); }}
+      onJoin={() => { if (meeting) setActiveMeetingId(meeting.id); }}
+      onLeave={() => { if (meeting) void runMeetingAction("leave", `/meetings/${meeting.id}/leave`); }}
+      onOpen={() => { if (meeting) void runMeetingAction("open", `/meetings/${meeting.id}/open`, { version: meeting.version }); }}
+      onRefresh={() => void refreshMeeting()}
+      onRoleDraftChange={(userId, role) => setMeetingRoleDrafts((current) => ({ ...current, [userId]: role }))}
+      onSchedule={() => void scheduleMeeting()}
+    />
+  ) : null;
+
   function popOut() {
     const url = new URL(window.location.href);
     url.searchParams.set("desk", "calendar");
@@ -369,6 +547,9 @@ export function CalendarDesk({ authSession, currentUser, onLogout, onOpenChat, o
             <button className="icon-button" onClick={onLogout} title="로그아웃" type="button"><LogOut size={18} /></button>
           </div>
         </header>
+        {meeting && meeting.id === activeMeetingId ? (
+          <MeetingRoom meeting={meeting} onClose={() => setActiveMeetingId("")} onUpdated={setMeeting} />
+        ) : null}
         {error ? (
           <div className="contacts-status contacts-error" role="alert">
             <span>{error}</span>
@@ -440,6 +621,7 @@ export function CalendarDesk({ authSession, currentUser, onLogout, onOpenChat, o
               onCancel={() => void cancelEvent(selectedOccurrence)}
               onEdit={() => beginEdit(selectedOccurrence)}
               onRespond={(response) => void respond(selectedOccurrence, response)}
+              meetingPanel={meetingPanel}
             />
           ) : (
             <div className="calendar-empty-detail">
@@ -552,9 +734,10 @@ function EventEditor({ context, disabled, form, onCancel, onChange, onSave, sele
   );
 }
 
-function EventDetail({ busyAction, event, onCancel, onEdit, onRespond }: {
+function EventDetail({ busyAction, event, meetingPanel, onCancel, onEdit, onRespond }: {
   busyAction: string;
   event: CalendarOccurrenceView;
+  meetingPanel: ReactNode;
   onCancel: () => void;
   onEdit: () => void;
   onRespond: (response: Exclude<CalendarResponseStatus, "needs_action">) => void;
@@ -593,6 +776,7 @@ function EventDetail({ busyAction, event, onCancel, onEdit, onRespond }: {
           </div>
         </section>
       ) : null}
+      {meetingPanel}
       {event.cancellationReason ? <section className="notice">{event.cancellationReason}</section> : null}
       {event.isCreator && event.status === "scheduled" ? (
         <div className="calendar-editor-actions calendar-detail-actions">

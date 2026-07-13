@@ -43,14 +43,50 @@ export class LiveKitProviderService {
     });
   }
 
+  async ensureRoom(roomName: string, participantCount: number) {
+    const { client } = this.client();
+    const rooms = await client.listRooms([roomName]);
+    if (rooms.some((room) => room.name === roomName)) return;
+    await this.createRoom(roomName, participantCount);
+  }
+
   async deleteRoom(roomName: string) {
     const { client } = this.client();
     await client.deleteRoom(roomName);
   }
 
+  async removeParticipant(roomName: string, identity: string) {
+    const { client } = this.client();
+    await client.removeParticipant(roomName, identity);
+  }
+
+  async updateParticipantPermissions(
+    roomName: string,
+    identity: string,
+    canPublishAudio: boolean,
+    canPublishVideo: boolean
+  ) {
+    const { client } = this.client();
+    const sources = [
+      ...(canPublishAudio ? [TrackSource.MICROPHONE] : []),
+      ...(canPublishVideo ? [TrackSource.CAMERA] : [])
+    ];
+    await client.updateParticipant(roomName, identity, {
+      permission: {
+        canPublish: sources.length > 0,
+        canPublishData: false,
+        canPublishSources: sources,
+        canSubscribe: true,
+        canUpdateMetadata: false
+      }
+    });
+  }
+
   async joinCredential(input: {
     callId: string;
     callType: CallType;
+    canPublishAudio?: boolean;
+    canPublishVideo?: boolean;
     displayName: string;
     identity: string;
     roomName: string;
@@ -62,12 +98,16 @@ export class LiveKitProviderService {
       name: input.displayName,
       ttl: tokenTtlSeconds
     });
+    const canPublishAudio = input.canPublishAudio ?? true;
+    const canPublishVideo = input.canPublishVideo ?? input.callType === "video";
+    const sources = [
+      ...(canPublishAudio ? [TrackSource.MICROPHONE] : []),
+      ...(canPublishVideo ? [TrackSource.CAMERA] : [])
+    ];
     token.addGrant({
-      canPublish: true,
+      canPublish: sources.length > 0,
       canPublishData: false,
-      canPublishSources: input.callType === "video"
-        ? [TrackSource.MICROPHONE, TrackSource.CAMERA]
-        : [TrackSource.MICROPHONE],
+      ...(sources.length ? { canPublishSources: sources } : {}),
       canSubscribe: true,
       canUpdateOwnMetadata: false,
       room: input.roomName,

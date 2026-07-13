@@ -98,6 +98,11 @@ const requiredFragments = [
   "provider_room_name",
   "call_participants_user_status_idx",
   "token_version",
+  "session_kind",
+  "scheduled_meeting",
+  "lobby_opens_at",
+  "call_sessions_event_occurrence_meeting_idx",
+  "call_participants_meeting_moderation_idx",
 ];
 
 for (const fragment of requiredFragments) {

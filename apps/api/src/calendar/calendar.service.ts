@@ -302,6 +302,7 @@ export class CalendarService {
       if (current.version !== input.version) {
         throw new ConflictException("This event changed in another window. Refresh before saving again.");
       }
+      await this.assertNoLiveMeeting(client, eventId);
       const prepared = await this.prepareEvent(client, principal, input);
       const updated = await client.query<{ version: number }>(
         `update events set
@@ -358,6 +359,7 @@ export class CalendarService {
       if (current.version !== version) {
         throw new ConflictException("This event changed in another window. Refresh before cancelling.");
       }
+      await this.assertNoLiveMeeting(client, eventId);
       const reason = rawReason?.trim() || null;
       const updated = await client.query(
         `update events set
@@ -831,6 +833,19 @@ export class CalendarService {
     const role = result.rows[0]?.role;
     if (!role) throw new ForbiddenException("Active organization membership is required.");
     return role;
+  }
+
+  private async assertNoLiveMeeting(client: PoolClient, eventId: string) {
+    const meeting = await client.query(
+      `select 1 from call_sessions
+       where event_id = $1 and session_kind = 'scheduled_meeting'
+         and status not in ('ended', 'cancelled', 'failed', 'expired')
+       limit 1`,
+      [eventId]
+    );
+    if (meeting.rowCount) {
+      throw new ConflictException("End the scheduled meeting before editing or cancelling this event.");
+    }
   }
 
   private async spaceForViewer(client: PoolClient, principal: AuthPrincipal, spaceId: string) {

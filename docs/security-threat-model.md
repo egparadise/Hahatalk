@@ -34,6 +34,9 @@
 | Shared socket leaks full message | User-specific authenticated channels and per-viewer projection |
 | LiveKit token joins another room or publishes screen/data | API-generated random room/identity, two-minute JWT, exact `roomJoin`, subscribe, and microphone/camera source grants only |
 | Hidden-hub call reveals another spoke | Stage 6B permits exactly one owner-spoke media room; multi-spoke calls require separate edge rooms and a future bridge |
+| Unadmitted meeting user obtains media access | Issue credentials only after server-side admission and keep participant state separate from token issuance/connection |
+| Attendee publishes by manipulating the UI | Sign subscribe-only attendee tokens and enforce live provider permissions; UI controls are only a projection of server grants |
+| Demoted speaker keeps existing media tracks | Call LiveKit participant permission update, verify the role projection, and remove the participant on synchronization failure |
 | Ended self-hosted token reconnects | Stop token issuance at terminal app state, increment participant token version, delete provider room, and keep join TTL short |
 | Invitation database reveals usable code | Return raw code once; store only a 32-byte SHA-256 digest; never log it |
 | Invitation is replayed or accepted concurrently | `SELECT FOR UPDATE`, use count 1, token digest scrubbing, terminal status checks |
@@ -65,4 +68,7 @@
 - Confirm guest UI and API expose only owner/self direct projection and no invitation management controls.
 - Confirm hub call REST/realtime/outbox/audit projections contain only owner and the selected spoke, with no hub name, count, other identity, provider room, token, key, or secret.
 - Decode test join tokens and confirm random identity, exact room, short expiry, microphone/camera-only source grants, no data/admin/create/record grants, and different identities per user.
+- Confirm scheduled meetings bind to a real event occurrence and snapshot only the exact authorized attendees; a forged occurrence or future membership is rejected.
+- Confirm waiting users receive no token, attendees receive `canPublish=false`, and live speaker demotion unpublishes tracks and removes microphone/camera controls.
+- Confirm meeting REST/realtime/outbox projections contain random media identities only for exact visible participants and omit provider room, token, key, secret, and hidden-hub roster information; audit omits all provider identifiers.
 - Confirm session cookies contain `HttpOnly` and `SameSite=Strict`, API JSON contains no token, and PostgreSQL contains only a 32-byte digest.

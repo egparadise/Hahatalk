@@ -2253,6 +2253,240 @@ button:disabled {
   width: auto;
 }
 
+.meeting-lobby {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.meeting-lobby-heading,
+.meeting-window-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.meeting-lobby-heading > span,
+.meeting-window-row > span,
+.meeting-window-row > small {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meeting-lobby-heading > span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.meeting-lobby-heading > strong,
+.meeting-role-chip {
+  flex: 0 0 auto;
+  border-radius: 5px;
+  padding: 4px 7px;
+  color: var(--teal-dark);
+  background: #dff4ef;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.meeting-lobby[data-status="failed"] .meeting-lobby-heading > strong,
+.meeting-lobby[data-status="expired"] .meeting-lobby-heading > strong,
+.meeting-lobby[data-status="cancelled"] .meeting-lobby-heading > strong {
+  color: #8d332c;
+  background: #f8ded9;
+}
+
+.meeting-lobby-state,
+.meeting-waiting,
+.meeting-lobby-error {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.meeting-lobby-state {
+  justify-content: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.meeting-lobby-error {
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 5px;
+  color: #8d332c;
+  background: #f8ded9;
+}
+
+.meeting-type-control {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.meeting-type-control button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.meeting-role-editor,
+.meeting-participant-list {
+  min-width: 0;
+  display: grid;
+}
+
+.meeting-role-editor label {
+  min-width: 0;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.meeting-role-editor label > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.meeting-role-editor .avatar,
+.meeting-participant-list .avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 7px;
+}
+
+.meeting-role-editor .text-input,
+.meeting-participant-list .text-input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.meeting-primary {
+  width: 100%;
+}
+
+.meeting-window-row {
+  min-height: 34px;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.meeting-window-row > span {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.meeting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.meeting-actions .primary-button,
+.meeting-actions .secondary-button {
+  min-height: 36px;
+  width: auto;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.meeting-waiting {
+  min-height: 36px;
+  padding: 0 8px;
+  color: var(--teal-dark);
+  font-weight: 800;
+}
+
+.meeting-participant-list > div {
+  min-width: 0;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(80px, 108px);
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.meeting-participant-list > div > span:nth-child(2) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.meeting-participant-list strong,
+.meeting-participant-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meeting-participant-list strong {
+  font-size: 12px;
+}
+
+.meeting-participant-list small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.meeting-participant-list > div[data-status="waiting"] {
+  background: #fff9e8;
+}
+
+.meeting-moderation-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 34px);
+  justify-content: end;
+  gap: 5px;
+}
+
+.meeting-moderation-actions .icon-button {
+  width: 34px;
+  height: 34px;
+}
+
+.meeting-room {
+  z-index: 19;
+}
+
+.meeting-empty-stage {
+  min-height: 160px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  color: #b6c4be;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  background: #293530;
+}
+
 .call-desk {
   position: absolute;
   z-index: 18;

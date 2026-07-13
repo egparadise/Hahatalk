@@ -206,6 +206,7 @@ export class CallsService {
        from call_sessions c
        join call_participants cp on cp.call_session_id = c.id and cp.user_id = $1
        where c.space_id = $2 and c.organization_id = $3
+         and c.session_kind = 'ad_hoc'
          and c.status in ('starting', 'ringing') and c.expires_at <= now()`,
       [principal.internalUserId, spaceId, principal.state.user.organizationId]
     );
@@ -217,6 +218,7 @@ export class CallsService {
          from call_sessions c
          join call_participants cp on cp.call_session_id = c.id and cp.user_id = $1
          where c.space_id = $2 and c.organization_id = $3
+           and c.session_kind = 'ad_hoc'
            and c.status in ('starting', 'ringing', 'active')
          order by c.created_at desc, c.id desc limit 20`,
         [principal.internalUserId, spaceId, principal.state.user.organizationId]
@@ -402,7 +404,7 @@ export class CallsService {
     }>(
       `select c.provider_room_name, c.status, count(cp.user_id)::int as participant_count
        from call_sessions c join call_participants cp on cp.call_session_id = c.id
-       where c.id = $1 group by c.id`,
+       where c.id = $1 and c.session_kind = 'ad_hoc' group by c.id`,
       [callId]
     );
     const row = current.rows[0];
@@ -431,7 +433,7 @@ export class CallsService {
         `update call_sessions
          set status = 'failed', ended_at = now(), end_reason = 'provider_unavailable',
              version = version + 1, updated_at = now()
-         where id = $1 and status = 'starting' returning organization_id`,
+         where id = $1 and session_kind = 'ad_hoc' and status = 'starting' returning organization_id`,
         [callId]
       );
       if (!updated.rowCount) return;
@@ -454,7 +456,7 @@ export class CallsService {
         status: CallStatus;
       }>(
         `select organization_id, provider_room_name, status from call_sessions
-         where id = $1 for update`,
+         where id = $1 and session_kind = 'ad_hoc' for update`,
         [callId]
       );
       const row = call.rows[0];
@@ -610,7 +612,7 @@ export class CallsService {
               cp.provider_identity
        from call_sessions c
        join call_participants cp on cp.call_session_id = c.id and cp.user_id = $2
-       where c.id = $1 and c.organization_id = $3
+       where c.id = $1 and c.organization_id = $3 and c.session_kind = 'ad_hoc'
        for update of c, cp`,
       [callId, principal.internalUserId, principal.state.user.organizationId]
     );
@@ -630,7 +632,7 @@ export class CallsService {
               c.ended_at, c.end_reason, c.created_at,
               s.type as space_type, s.name as space_name, s.owner_id as space_owner_id
        from call_sessions c join conversation_spaces s on s.id = c.space_id
-       where c.id = $1`,
+       where c.id = $1 and c.session_kind = 'ad_hoc'`,
       [callId]
     );
     const call = callResult.rows[0];

@@ -613,7 +613,17 @@ create table call_sessions (
   call_type text not null check (call_type in ('voice', 'video')),
   provider text not null default 'livekit' check (provider = 'livekit'),
   provider_room_name text not null unique,
-  status text not null check (status in ('starting', 'ringing', 'active', 'ended', 'cancelled', 'failed', 'expired')),
+  session_kind text not null default 'ad_hoc' check (session_kind in ('ad_hoc', 'scheduled_meeting')),
+  event_id uuid references events(id) on delete restrict,
+  event_version integer,
+  occurrence_starts_at timestamptz,
+  occurrence_ends_at timestamptz,
+  lobby_opens_at timestamptz,
+  lobby_opened_at timestamptz,
+  status text not null check (status in (
+    'scheduled', 'starting', 'lobby_open', 'ringing', 'active',
+    'ended', 'cancelled', 'failed', 'expired'
+  )),
   version integer not null default 1 check (version > 0),
   expires_at timestamptz not null,
   started_at timestamptz,
@@ -621,29 +631,54 @@ create table call_sessions (
   end_reason text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check ((status in ('ended', 'cancelled', 'failed', 'expired')) = (ended_at is not null))
+  check ((status in ('ended', 'cancelled', 'failed', 'expired')) = (ended_at is not null)),
+  check (
+    (session_kind = 'ad_hoc' and event_id is null and occurrence_starts_at is null)
+    or
+    (session_kind = 'scheduled_meeting'
+      and event_id is not null and event_version is not null
+      and occurrence_starts_at is not null and occurrence_ends_at is not null
+      and lobby_opens_at is not null and occurrence_ends_at > occurrence_starts_at
+      and lobby_opens_at < occurrence_ends_at and expires_at > occurrence_ends_at)
+  )
 );
+
+create unique index call_sessions_event_occurrence_meeting_idx
+  on call_sessions(event_id, occurrence_starts_at)
+  where session_kind = 'scheduled_meeting';
 
 create table call_participants (
   call_session_id uuid not null references call_sessions(id) on delete cascade,
   user_id uuid not null references users(id),
-  role text not null check (role in ('host', 'participant')),
-  status text not null check (status in ('invited', 'connecting', 'joined', 'declined', 'left', 'removed', 'missed')),
+  role text not null check (role in ('host', 'participant', 'cohost', 'speaker', 'attendee')),
+  status text not null check (status in (
+    'invited', 'waiting', 'admitted', 'connecting', 'joined',
+    'declined', 'left', 'removed', 'missed'
+  )),
   provider_identity text not null unique,
   can_publish_audio boolean not null default true,
   can_publish_video boolean not null default false,
+  event_response_status text check (event_response_status is null or event_response_status in ('needs_action', 'accepted', 'declined', 'tentative')),
   token_version integer not null default 1 check (token_version > 0),
   invited_at timestamptz not null default now(),
+  waiting_at timestamptz,
+  admitted_at timestamptz,
+  admitted_by uuid references users(id),
   connecting_at timestamptz,
   joined_at timestamptz,
   left_at timestamptz,
   declined_at timestamptz,
+  role_updated_at timestamptz,
   updated_at timestamptz not null default now(),
   primary key (call_session_id, user_id)
 );
 
 create index call_participants_user_status_idx
   on call_participants(user_id, status, invited_at desc);
+
+create index call_participants_meeting_moderation_idx
+  on call_participants(call_session_id, role, status, waiting_at)
+  where role in ('host', 'cohost') or status = 'waiting';
 
 create table call_events (
   id uuid primary key default gen_random_uuid(),

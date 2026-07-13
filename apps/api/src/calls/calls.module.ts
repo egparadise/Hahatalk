@@ -5,6 +5,7 @@ import { LiveKitProviderService } from "./livekit-provider.service.js";
 
 @Module({
   controllers: [CallsController],
+  exports: [LiveKitProviderService],
   providers: [CallsService, LiveKitProviderService]
 })
 export class CallsModule {}

@@ -886,7 +886,8 @@ export class ConversationService {
       return undefined;
     }
     if (
-      event.payload_json.realtimeEvent?.startsWith("call:")
+      (event.payload_json.realtimeEvent?.startsWith("call:")
+        || event.payload_json.realtimeEvent?.startsWith("meeting:"))
       && event.payload_json.realtimePayload !== undefined
     ) {
       return {

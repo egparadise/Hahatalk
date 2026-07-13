@@ -51,6 +51,18 @@ export type CallType = "voice" | "video";
 export type CallStatus = "starting" | "ringing" | "active" | "ended" | "cancelled" | "failed" | "expired";
 export type CallParticipantStatus = "invited" | "connecting" | "joined" | "declined" | "left" | "removed" | "missed";
 export type CallParticipantRole = "host" | "participant";
+export type MeetingStatus = "scheduled" | "starting" | "lobby_open" | "active" | "ended" | "cancelled" | "failed" | "expired";
+export type MeetingRole = "host" | "cohost" | "speaker" | "attendee";
+export type MeetingParticipantStatus =
+  | "invited"
+  | "waiting"
+  | "admitted"
+  | "connecting"
+  | "joined"
+  | "declined"
+  | "left"
+  | "removed"
+  | "missed";
 
 export interface Organization {
   id: string;
@@ -675,6 +687,73 @@ export interface StartCallInput {
 
 export interface CallJoinView {
   call: CallView;
+  serverUrl: string;
+  token: string;
+  tokenExpiresAt: string;
+}
+
+export interface MeetingRoleAssignment {
+  userId: string;
+  role: Exclude<MeetingRole, "host">;
+}
+
+export interface MeetingParticipantView {
+  mediaIdentity: string;
+  person: Pick<User, "id" | "displayName" | "character">;
+  role: MeetingRole;
+  status: MeetingParticipantStatus;
+  eventResponse: CalendarResponseStatus;
+  isSelf: boolean;
+  canPublishAudio: boolean;
+  canPublishVideo: boolean;
+  invitedAt: string;
+  waitingAt?: string;
+  admittedAt?: string;
+  joinedAt?: string;
+  leftAt?: string;
+}
+
+export interface MeetingView {
+  id: string;
+  eventId: string;
+  spaceId: string;
+  occurrenceStartsAt: string;
+  occurrenceEndsAt: string;
+  lobbyOpensAt: string;
+  lobbyClosesAt: string;
+  callType: CallType;
+  status: MeetingStatus;
+  title: string;
+  version: number;
+  isCreator: boolean;
+  myRole: MeetingRole;
+  myStatus: MeetingParticipantStatus;
+  canOpen: boolean;
+  canEnter: boolean;
+  canJoin: boolean;
+  canLeave: boolean;
+  canEnd: boolean;
+  canAdmit: boolean;
+  canManageRoles: boolean;
+  participants: MeetingParticipantView[];
+  waitingCount?: number;
+  createdAt: string;
+  openedAt?: string;
+  startedAt?: string;
+  endedAt?: string;
+  endReason?: string;
+}
+
+export interface ScheduleMeetingInput {
+  clientMeetingId: string;
+  eventId: string;
+  occurrenceStartsAt: string;
+  callType: CallType;
+  roleAssignments: MeetingRoleAssignment[];
+}
+
+export interface MeetingJoinView {
+  meeting: MeetingView;
   serverUrl: string;
   token: string;
   tokenExpiresAt: string;
