@@ -84,7 +84,7 @@ Exit: fresh-DB and installed-Windows tests prove chat independence, resumable in
 2. LiveKit token service and ad-hoc voice/video calls. Complete for Windows in Stage 6B.
 3. Scheduled meeting lobby and participant roles. Complete for Windows in Stage 6C.
 4. Screen sharing, device controls, background blur/image. Complete for Windows in Stage 6D.
-5. Recording consent and egress lifecycle.
+5. Recording consent and Egress lifecycle. Complete for the Windows/web control plane in Stage 6E; real self-hosted Egress and protected-object deployment smoke remains an infrastructure gate.
 
 Exit: web, Windows desktop, Android, and iOS capability matrix is tested; unsupported controls are hidden rather than simulated.
 
@@ -93,6 +93,8 @@ Stage 6B exit evidence: fresh PostgreSQL privacy/state tests use the pinned offi
 Stage 6C exit evidence: fresh PostgreSQL plus the real provider proves canonical occurrence binding, exact attendee snapshots, lobby admission, role grants, hidden-hub/guest privacy, restart behavior, and provider failure. The installed Electron renderer proves a real scheduled-meeting SFU join, subscribe-only attendee demotion, immediate track revocation, character fallback, stable layout, and provider cleanup.
 
 Stage 6D exit evidence: immutable migration and fresh-DB tests prove explicit screen-share grants, one active sharer, role boundaries, rollback, audit, and terminal cleanup. Installed Electron renderers prove local device selection, packaged MediaPipe background blur, real screen-track publication/stop, concurrent denial, and immediate role-demotion revocation without persisting device IDs or background images.
+
+Stage 6E exit evidence: fresh-DB call/meeting tests prove exact joined-participant snapshots, exact-policy unanimous consent, denial/re-request, cohost control, immediate participant revoke, late-join blocking, signed webhook enforcement, provider-secret exclusion, restart reconciliation, and fail-closed room shutdown. The Windows/web UI exposes a continuous recording state and per-person consent controls. A production Egress worker and protected S3-compatible bucket are required before real MP4 output is approved.
 
 ## Stage 7 - Personal Broadcast
 

@@ -9,6 +9,7 @@ import { MediaModule } from "./media/media.module.js";
 import { CalendarModule } from "./calendar/calendar.module.js";
 import { CallsModule } from "./calls/calls.module.js";
 import { MeetingsModule } from "./meetings/meetings.module.js";
+import { RecordingsModule } from "./recordings/recordings.module.js";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { MeetingsModule } from "./meetings/meetings.module.js";
     ChatModule,
     MediaModule,
     CalendarModule,
+    RecordingsModule,
     CallsModule,
     MeetingsModule
   ]

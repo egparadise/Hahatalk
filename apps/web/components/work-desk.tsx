@@ -39,7 +39,7 @@ import {
   X,
   XCircle
 } from "lucide-react";
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import {
   buildReadReport,
@@ -698,6 +698,14 @@ function ChatDesk({
     available: false,
     deployment: "unconfigured",
     provider: "livekit",
+    recording: {
+      available: false,
+      deployment: "unconfigured",
+      mode: "room_composite",
+      outputFormat: "mp4",
+      policyVersion: "hahatalk-recording-v1",
+      provider: "livekit-egress"
+    },
     tokenTtlSeconds: 120
   });
   const [calls, setCalls] = useState<CallView[]>([]);
@@ -768,6 +776,9 @@ function ChatDesk({
     };
     socket.on("call:incoming", applyCall);
     socket.on("call:updated", applyCall);
+    socket.on("call:recording-updated", ({ sessionId }: { sessionId: string }) => {
+      void getJson<CallView>(`/calls/${sessionId}`).then(applyCall).catch(() => undefined);
+    });
     return () => {
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       socket.close();
@@ -867,9 +878,9 @@ function ChatDesk({
     }
   }
 
-  function applyCallUpdate(call: CallView) {
+  const applyCallUpdate = useCallback((call: CallView) => {
     setCalls((current) => [call, ...current.filter((candidate) => candidate.id !== call.id)]);
-  }
+  }, []);
 
   function applyConversationView(view: ConversationView) {
     const nextUsers = mergeCurrentUser(view.users, currentUser);

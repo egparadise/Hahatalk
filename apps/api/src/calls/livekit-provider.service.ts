@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { AccessToken, RoomServiceClient, TrackSource } from "livekit-server-sdk";
 import type { CallCapabilities, CallType } from "@hahatalk/contracts";
+import { LiveKitEgressProviderService } from "../recordings/livekit-egress-provider.service.js";
 
 const tokenTtlSeconds = 120;
 
@@ -14,6 +15,8 @@ type LiveKitConfiguration = {
 
 @Injectable()
 export class LiveKitProviderService {
+  constructor(private readonly egress: LiveKitEgressProviderService) {}
+
   capabilities(): CallCapabilities {
     const configuration = this.configuration();
     if (!configuration) {
@@ -21,6 +24,7 @@ export class LiveKitProviderService {
         available: false,
         deployment: "unconfigured",
         provider: "livekit",
+        recording: this.egress.capabilities(),
         reason: "Voice and video calls require a configured LiveKit service.",
         tokenTtlSeconds
       };
@@ -29,6 +33,7 @@ export class LiveKitProviderService {
       available: true,
       deployment: configuration.deployment,
       provider: "livekit",
+      recording: this.egress.capabilities(),
       tokenTtlSeconds
     };
   }
@@ -153,6 +158,7 @@ export class LiveKitProviderService {
       const parsed = new URL(rawUrl);
       const local = ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);
       if (!["http:", "https:", "ws:", "wss:"].includes(parsed.protocol)) return undefined;
+      if (parsed.username || parsed.password) return undefined;
       if (!local && !["https:", "wss:"].includes(parsed.protocol)) return undefined;
       const client = new URL(parsed);
       client.protocol = parsed.protocol === "https:" || parsed.protocol === "wss:" ? "wss:" : "ws:";

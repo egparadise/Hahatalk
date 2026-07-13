@@ -13,6 +13,15 @@ export function createOriginPolicy(allowedOrigin: string) {
       return;
     }
 
+    if (
+      request.path === "/provider/livekit/webhook"
+      && request.header("Content-Type")?.toLowerCase().startsWith("application/webhook+json")
+      && Boolean(request.header("Authorization"))
+    ) {
+      next();
+      return;
+    }
+
     const origin = request.headers.origin;
     const clientHeader = request.header(hahaTalkClientHeader);
     const fetchSite = request.header("Sec-Fetch-Site");

@@ -311,6 +311,14 @@ const screenshotPath = path.resolve(argument(
   "screenshot",
   path.join(process.cwd(), "apps", "desktop", "out", "stage6d-screen-share-background.png")
 ));
+const recordingScreenshotPath = path.resolve(argument(
+  "recording-screenshot",
+  path.join(process.cwd(), "apps", "desktop", "out", "stage6e-recording-consent.png")
+));
+const recordingMobileScreenshotPath = path.resolve(argument(
+  "recording-mobile-screenshot",
+  path.join(process.cwd(), "apps", "desktop", "out", "stage6e-recording-consent-mobile.png")
+));
 const livekitExecutable = path.join(process.env.LOCALAPPDATA ?? "", "HahaTalkDev", "LiveKit", "1.13.3", "livekit-server.exe");
 const password = "Stage6B!RendererOwner";
 const minaPassword = "Stage6B!RendererMina";
@@ -331,7 +339,12 @@ const application = spawn(executablePath, [`--remote-debugging-port=${debugPort}
     HAHATALK_USER_DATA_DIR: userDataRoot,
     LIVEKIT_API_KEY: "devkey",
     LIVEKIT_API_SECRET: "secret",
-    LIVEKIT_URL: livekit.url
+    LIVEKIT_URL: livekit.url,
+    LIVEKIT_EGRESS_ENABLED: "1",
+    LIVEKIT_EGRESS_S3_ACCESS_KEY: "renderer-test-access",
+    LIVEKIT_EGRESS_S3_BUCKET: "renderer-test-recordings",
+    LIVEKIT_EGRESS_S3_REGION: "ap-northeast-2",
+    LIVEKIT_EGRESS_S3_SECRET_KEY: "renderer-test-secret"
   },
   stdio: "ignore",
   windowsHide: true
@@ -437,6 +450,57 @@ try {
   assert(screenLayout, "Installed screen-share stage overlaps the header, participant grid, or controls.");
   await captureScreenshot(cdp, screenshotPath);
 
+  await apiRequest(runtime, mina.cookie, `/calls/${started.id}/recording/request`, { method: "POST", payload: {} });
+  await waitForExpression(
+    cdp,
+    "document.querySelector('.recording-panel')?.innerText.includes('녹화 동의 요청') && document.querySelectorAll('.recording-consent-list > div').length === 2",
+    "Installed call did not render the exact recording consent roster."
+  );
+  const recordingLayout = await evaluate(cdp, `
+    (() => {
+      const desk = document.querySelector('.call-desk').getBoundingClientRect();
+      const header = document.querySelector('.call-desk-header').getBoundingClientRect();
+      const controls = document.querySelector('.call-controls').getBoundingClientRect();
+      const panel = document.querySelector('.recording-panel').getBoundingClientRect();
+      return panel.top >= header.bottom - 1
+        && panel.bottom <= controls.top + 1
+        && panel.left >= desk.left
+        && panel.right <= desk.right + 1;
+    })()
+  `);
+  assert(recordingLayout, "Installed recording consent panel overlaps the header/controls or escapes the call desk.");
+  await evaluate(cdp, "[...document.querySelectorAll('.recording-action.approve')].find((button) => button.innerText.includes('동의')).click()");
+  await waitForExpression(
+    cdp,
+    "document.querySelectorAll('.recording-consent-list > div[data-consent=\"granted\"]').length === 1",
+    "Installed participant recording consent did not update."
+  );
+  await captureScreenshot(cdp, recordingScreenshotPath);
+  await cdp.send("Emulation.setDeviceMetricsOverride", { deviceScaleFactor: 1, height: 900, mobile: false, width: 720 });
+  await waitForExpression(cdp, "innerWidth === 720 && document.querySelector('.recording-panel') !== null", "Recording panel did not survive compact viewport layout.");
+  const compactRecordingLayout = await evaluate(cdp, `
+    (() => {
+      const panel = document.querySelector('.recording-panel');
+      const rect = panel.getBoundingClientRect();
+      const controls = document.querySelector('.call-controls').getBoundingClientRect();
+      return rect.left >= 0
+        && rect.right <= innerWidth + 1
+        && rect.bottom <= controls.top + 1
+        && panel.scrollWidth <= panel.clientWidth + 1
+        && [...panel.querySelectorAll('button')].every((button) => button.scrollWidth <= button.clientWidth + 1);
+    })()
+  `);
+  assert(compactRecordingLayout, "Compact recording consent controls overflowed or overlapped call controls.");
+  await captureScreenshot(cdp, recordingMobileScreenshotPath);
+  await cdp.send("Emulation.clearDeviceMetricsOverride");
+  await waitForExpression(cdp, "innerWidth > 720", "Installed call viewport did not restore after compact layout verification.");
+  const cancelledRecording = await apiRequest(runtime, mina.cookie, `/calls/${started.id}/recording/stop`, {
+    method: "POST",
+    payload: { reason: "host_stopped" }
+  });
+  assert(cancelledRecording.status === "aborted", "Installed host could not cancel the pending recording request.");
+  await waitForExpression(cdp, "document.querySelector('.recording-panel')?.innerText.includes('녹화 요청 종료')", "Installed recording terminal state did not render.");
+
   await evaluate(cdp, "document.querySelector('.screen-share-banner button').click()");
   await waitForExpression(cdp, "!document.querySelector('.screen-share-stage') && Boolean(document.querySelector('button[title=\"화면 공유\"]'))", "Installed screen share did not stop immediately.", 200);
   await waitForScreenShare(livekit.client, false);
@@ -457,7 +521,7 @@ try {
   for (let attempt = 0; attempt < 80 && isProcessRunning(application.pid); attempt += 1) await delay(125);
   assert(!isProcessRunning(application.pid), "Installed call renderer process remained after shutdown.");
   assert(!(await isPortOpen(runtime.databasePort)), "Installed call renderer PostgreSQL remained reachable after shutdown.");
-  console.log(`Windows installed LiveKit renderer passed: real SFU, device selectors, local background blur, explicit screen share, singleton denial, stop, leave, layout, and screenshot ${screenshotPath}`);
+  console.log(`Windows installed LiveKit renderer passed: real SFU, device selectors, local background blur, explicit screen share, responsive recording consent UI, singleton denial, stop, leave, layout, and screenshots ${screenshotPath}, ${recordingScreenshotPath}, ${recordingMobileScreenshotPath}`);
 } finally {
   if (isProcessRunning(application.pid)) {
     await Promise.race([

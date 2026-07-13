@@ -58,6 +58,20 @@ export type ScreenShareStopReason =
   | "track_ended"
   | "publish_failed"
   | "permission_changed";
+export type RecordingStatus =
+  | "consent_pending"
+  | "consent_denied"
+  | "consent_granted"
+  | "starting"
+  | "recording"
+  | "stopping"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "aborted";
+export type RecordingConsentDecision = "granted" | "denied";
+export type RecordingConsentStatus = "not_requested" | "pending" | RecordingConsentDecision | "revoked";
+export type RecordingStopReason = "host_stopped" | "consent_revoked" | "session_ended" | "provider_failed";
 export type MeetingStatus = "scheduled" | "starting" | "lobby_open" | "active" | "ended" | "cancelled" | "failed" | "expired";
 export type MeetingRole = "host" | "cohost" | "speaker" | "attendee";
 export type MeetingParticipantStatus =
@@ -652,6 +666,45 @@ export interface CallCapabilities {
   deployment: "local" | "remote" | "unconfigured";
   tokenTtlSeconds: number;
   reason?: string;
+  recording: RecordingCapabilities;
+}
+
+export interface RecordingCapabilities {
+  available: boolean;
+  provider: "livekit-egress";
+  deployment: "local" | "remote" | "unconfigured";
+  mode: "room_composite";
+  outputFormat: "mp4";
+  policyVersion: string;
+  reason?: string;
+}
+
+export interface RecordingConsentView {
+  person: Pick<User, "id" | "displayName" | "character">;
+  role: CallParticipantRole | MeetingRole;
+  consentStatus: RecordingConsentStatus;
+  isSelf: boolean;
+  respondedAt?: string;
+}
+
+export interface RecordingView {
+  id: string;
+  status: RecordingStatus;
+  policyVersion: string;
+  requestedAt: string;
+  requestedBy: Pick<User, "id" | "displayName" | "character">;
+  participants: RecordingConsentView[];
+  allConsented: boolean;
+  myConsentStatus: RecordingConsentStatus;
+  canRespond: boolean;
+  canStart: boolean;
+  canStop: boolean;
+  canRevoke: boolean;
+  consentCompletedAt?: string;
+  startedAt?: string;
+  stopRequestedAt?: string;
+  endedAt?: string;
+  failureCode?: string;
 }
 
 export interface CallParticipantView {
@@ -680,6 +733,8 @@ export interface CallView {
   canLeave: boolean;
   canEnd: boolean;
   canShareScreen: boolean;
+  canRequestRecording: boolean;
+  recording?: RecordingView;
   participants: CallParticipantView[];
   createdAt: string;
   expiresAt: string;
@@ -748,6 +803,8 @@ export interface MeetingView {
   canAdmit: boolean;
   canManageRoles: boolean;
   canShareScreen: boolean;
+  canRequestRecording: boolean;
+  recording?: RecordingView;
   participants: MeetingParticipantView[];
   waitingCount?: number;
   createdAt: string;
@@ -774,6 +831,15 @@ export interface MeetingJoinView {
 
 export interface StopScreenShareInput {
   reason: ScreenShareStopReason;
+}
+
+export interface RecordingConsentInput {
+  decision: RecordingConsentDecision;
+  policyVersion: string;
+}
+
+export interface StopRecordingInput {
+  reason: Extract<RecordingStopReason, "host_stopped" | "consent_revoked">;
 }
 
 export interface MvpSnapshot extends ConversationView {

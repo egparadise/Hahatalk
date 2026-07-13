@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module.js";
 import { createOriginPolicy, hahaTalkClientHeader } from "./security/origin-policy.js";
 
@@ -8,7 +9,8 @@ const port = Number(process.env.PORT ?? 4000);
 const webOrigin = process.env.WEB_ORIGIN ?? "http://127.0.0.1:3000";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  app.useBodyParser("json", { type: ["application/json", "application/webhook+json"] });
 
   app.enableCors({
     allowedHeaders: ["Content-Type", "X-HahaTalk-Part-Sha256", hahaTalkClientHeader],

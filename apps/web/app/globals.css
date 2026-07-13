@@ -2739,6 +2739,196 @@ button:disabled {
   background: #a9463d;
 }
 
+.recording-panel {
+  position: absolute;
+  z-index: 5;
+  right: 14px;
+  bottom: 88px;
+  width: min(390px, calc(100% - 28px));
+  max-height: min(360px, calc(100% - 180px));
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #f7faf8;
+  background: rgba(32, 43, 39, 0.96);
+  box-shadow: 0 12px 30px rgba(5, 12, 9, 0.3);
+  backdrop-filter: blur(10px);
+}
+
+.recording-panel[data-active="true"] {
+  border-color: #e46b61;
+  box-shadow: 0 0 0 1px rgba(228, 107, 97, 0.22), 0 12px 30px rgba(5, 12, 9, 0.3);
+}
+
+.recording-panel[data-terminal="true"] {
+  width: min(330px, calc(100% - 28px));
+}
+
+.recording-panel-compact {
+  width: auto;
+  max-width: calc(100% - 28px);
+  padding: 7px;
+}
+
+.recording-request-button,
+.recording-action {
+  min-height: 34px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  color: #f7faf8;
+  background: #37463f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.recording-request-button svg {
+  color: #e46b61;
+  fill: #e46b61;
+}
+
+.recording-panel-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.recording-panel-header > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.recording-panel-header strong,
+.recording-panel-header small {
+  overflow-wrap: anywhere;
+}
+
+.recording-panel-header strong {
+  font-size: 13px;
+}
+
+.recording-panel-header small {
+  color: #b6c4be;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.recording-state-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #f3ca68;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.recording-panel[data-active="true"] .recording-state-icon {
+  color: #ff8177;
+  background: rgba(228, 107, 97, 0.14);
+}
+
+.recording-consent-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.recording-consent-list > div {
+  min-width: 0;
+  min-height: 42px;
+  padding: 5px 7px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.recording-consent-list > div[data-consent="granted"] > svg {
+  color: #5ee1cf;
+}
+
+.recording-consent-list > div[data-consent="denied"] > svg,
+.recording-consent-list > div[data-consent="revoked"] > svg {
+  color: #ff8177;
+}
+
+.recording-consent-list img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 5px;
+  background: #f0f4ef;
+}
+
+.recording-consent-list span {
+  min-width: 0;
+  display: grid;
+}
+
+.recording-consent-list strong,
+.recording-consent-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recording-consent-list strong {
+  font-size: 10px;
+}
+
+.recording-consent-list small {
+  color: #b6c4be;
+  font-size: 9px;
+}
+
+.recording-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.recording-action.approve {
+  color: #10201b;
+  border-color: #5ee1cf;
+  background: #5ee1cf;
+}
+
+.recording-action.reject,
+.recording-action.stop {
+  color: #fff;
+  border-color: #d85d50;
+  background: #b9473e;
+}
+
+.recording-request-button:disabled,
+.recording-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.recording-error {
+  max-width: 100%;
+  color: #ffb0a9;
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .call-controls {
   min-height: 76px;
   padding: 12px 16px;
@@ -3016,6 +3206,23 @@ button:disabled {
 
   .call-desk:has(> .screen-share-stage) {
     grid-template-rows: auto minmax(180px, 48%) minmax(120px, 1fr) auto auto;
+  }
+
+  .recording-panel,
+  .recording-panel[data-terminal="true"] {
+    right: 8px;
+    bottom: 82px;
+    width: calc(100% - 16px);
+    max-height: min(44%, 330px);
+  }
+
+  .recording-panel-compact {
+    right: 8px;
+    width: auto;
+  }
+
+  .recording-consent-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .live-media-controls {

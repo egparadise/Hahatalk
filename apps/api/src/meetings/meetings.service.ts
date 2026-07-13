@@ -27,6 +27,7 @@ import type { AuthPrincipal } from "../auth/auth.types.js";
 import { LiveKitProviderService } from "../calls/livekit-provider.service.js";
 import { localDateTimeToPseudoUtc, parseStoredRecurrence, recurrenceLocalStarts } from "../calendar/calendar-recurrence.js";
 import { DatabaseService } from "../database/database.service.js";
+import { RecordingsService } from "../recordings/recordings.service.js";
 
 type EventRow = {
   all_day: boolean;
@@ -135,7 +136,8 @@ function opaqueName(prefix: string, bytes = 24) {
 export class MeetingsService {
   constructor(
     private readonly database: DatabaseService,
-    private readonly livekit: LiveKitProviderService
+    private readonly livekit: LiveKitProviderService,
+    private readonly recordings: RecordingsService
   ) {}
 
   capabilities(): CallCapabilities {
@@ -598,6 +600,7 @@ export class MeetingsService {
     const prepared = await this.database.transaction(async (client) => {
       const locked = await this.lockParticipant(client, principal, meetingId);
       this.assertOpen(locked.status);
+      await this.recordings.assertJoinAllowed(client, meetingId, principal.internalUserId);
       if (!["admitted", "connecting", "joined"].includes(locked.participant_status)) {
         throw new ConflictException("Wait for admission before joining the meeting.");
       }
@@ -638,6 +641,7 @@ export class MeetingsService {
     return this.database.transaction(async (client) => {
       const locked = await this.lockParticipant(client, principal, meetingId);
       this.assertOpen(locked.status);
+      await this.recordings.assertJoinAllowed(client, meetingId, principal.internalUserId);
       if (!["connecting", "joined"].includes(locked.participant_status)) {
         throw new ConflictException("A join credential is required before confirming the media connection.");
       }
@@ -846,8 +850,9 @@ export class MeetingsService {
         view: await this.project(client, meetingId, principal.internalUserId)
       };
     });
+    await this.recordings.stopForSession(meetingId, principal.internalUserId);
     if (result.deleteRoom) await this.deleteProviderRoom(result.roomName, meetingId);
-    return result.view;
+    return this.get(principal, meetingId);
   }
 
   private async eventForCreator(client: PoolClient, principal: AuthPrincipal, eventId: string) {
@@ -980,6 +985,7 @@ export class MeetingsService {
     const open = ["lobby_open", "active"].includes(meeting.status);
     const moderator = this.isModerator(viewer.role);
     const now = Date.now();
+    const recording = await this.recordings.project(client, meetingId, viewerInternalId);
     return {
       callType: meeting.call_type,
       canAdmit: !terminal && open && moderator,
@@ -992,6 +998,7 @@ export class MeetingsService {
         && meeting.status === "active"
         && viewer.status === "joined"
         && ["host", "cohost", "speaker"].includes(viewer.role),
+      canRequestRecording: this.recordings.canRequest(meeting.status, viewer.status, viewer.role, recording),
       canOpen: !terminal
         && ["scheduled", "starting"].includes(meeting.status)
         && moderator
@@ -1008,6 +1015,7 @@ export class MeetingsService {
       lobbyOpensAt: meeting.lobby_opens_at.toISOString(),
       myRole: viewer.role,
       myStatus: viewer.status,
+      ...(recording ? { recording } : {}),
       occurrenceEndsAt: meeting.occurrence_ends_at.toISOString(),
       occurrenceStartsAt: meeting.occurrence_starts_at.toISOString(),
       participants: participantResult.rows.map((participant) => ({
@@ -1129,7 +1137,10 @@ export class MeetingsService {
       await this.enqueue(client, meetingId);
       return row.lobby_opened_at ? row.provider_room_name : undefined;
     });
-    if (result) await this.deleteProviderRoom(result, meetingId);
+    if (result) {
+      await this.recordings.stopForSession(meetingId, null);
+      await this.deleteProviderRoom(result, meetingId);
+    }
   }
 
   private async terminate(
@@ -1140,6 +1151,7 @@ export class MeetingsService {
     status: "ended" | "cancelled",
     reason: string
   ) {
+    await this.recordings.markSessionTerminated(client, meetingId, actorId, "scheduled_meeting");
     await client.query(
       `update call_sessions
        set status = $2, ended_at = now(), end_reason = $3, version = version + 1, updated_at = now()

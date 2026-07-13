@@ -45,6 +45,8 @@ const requiredTables = [
   "call_sessions",
   "call_participants",
   "call_events",
+  "call_recordings",
+  "call_recording_participants",
   "broadcast_channels",
   "avatar_profiles",
   "ai_model_configs",
@@ -105,6 +107,10 @@ const requiredFragments = [
   "call_participants_meeting_moderation_idx",
   "screen_share_status",
   "call_participants_one_screen_share_idx",
+  "call_recordings_one_pending_or_active_idx",
+  "call_recordings_provider_recovery_idx",
+  "consent_snapshot_json",
+  "room_composite",
 ];
 
 for (const fragment of requiredFragments) {
@@ -134,7 +140,8 @@ const governanceFiles = [
   "apps/api/migrations/006_schedule_rsvp_reminders.sql",
   "apps/api/migrations/007_livekit_call_core.sql",
   "apps/api/migrations/008_scheduled_meeting_lobby.sql",
-  "apps/api/migrations/009_screen_share_device_background.sql"
+  "apps/api/migrations/009_screen_share_device_background.sql",
+  "apps/api/migrations/010_recording_consent_egress.sql"
 ];
 
 for (const file of governanceFiles) {

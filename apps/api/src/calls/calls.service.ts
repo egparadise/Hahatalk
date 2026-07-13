@@ -24,6 +24,7 @@ import {
 import type { PoolClient } from "pg";
 import type { AuthPrincipal } from "../auth/auth.types.js";
 import { DatabaseService } from "../database/database.service.js";
+import { RecordingsService } from "../recordings/recordings.service.js";
 import { LiveKitProviderService } from "./livekit-provider.service.js";
 
 type SpaceMemberRow = {
@@ -100,7 +101,8 @@ function opaqueName(prefix: string, bytes = 24) {
 export class CallsService {
   constructor(
     private readonly database: DatabaseService,
-    private readonly livekit: LiveKitProviderService
+    private readonly livekit: LiveKitProviderService,
+    private readonly recordings: RecordingsService
   ) {}
 
   capabilities(): CallCapabilities {
@@ -249,6 +251,7 @@ export class CallsService {
     const prepared = await this.database.transaction(async (client) => {
       const locked = await this.lockParticipant(client, principal, callId);
       this.assertLiveCall(locked.status);
+      await this.recordings.assertJoinAllowed(client, callId, principal.internalUserId);
       if (["declined", "left", "removed", "missed"].includes(locked.participant_status)) {
         throw new ConflictException("This call invitation is no longer joinable.");
       }
@@ -285,6 +288,7 @@ export class CallsService {
     return this.database.transaction(async (client) => {
       const locked = await this.lockParticipant(client, principal, callId);
       this.assertLiveCall(locked.status);
+      await this.recordings.assertJoinAllowed(client, callId, principal.internalUserId);
       if (!['connecting', 'joined'].includes(locked.participant_status)) {
         throw new ConflictException("A join credential must be requested before confirming connection.");
       }
@@ -463,8 +467,9 @@ export class CallsService {
         view: await this.project(client, callId, principal.internalUserId)
       };
     });
+    await this.recordings.stopForSession(callId, principal.internalUserId);
     await this.deleteProviderRoom(result.providerRoomName, callId);
-    return result.view;
+    return this.get(principal, callId);
   }
 
   private async participantExit(
@@ -539,7 +544,10 @@ export class CallsService {
         view: await this.project(client, callId, principal.internalUserId)
       };
     });
-    if (result.ended) await this.deleteProviderRoom(result.providerRoomName, callId);
+    if (result.ended) {
+      await this.recordings.stopForSession(callId, principal.internalUserId);
+      await this.deleteProviderRoom(result.providerRoomName, callId);
+    }
     else if (result.removeParticipant) {
       await this.livekit.removeParticipant(result.providerRoomName, result.providerIdentity).catch(() => undefined);
     }
@@ -641,7 +649,10 @@ export class CallsService {
       await this.enqueue(client, callId);
       return row.provider_room_name;
     });
-    if (result) await this.deleteProviderRoom(result, callId);
+    if (result) {
+      await this.recordings.stopForSession(callId, null);
+      await this.deleteProviderRoom(result, callId);
+    }
   }
 
   private async terminate(
@@ -652,6 +663,7 @@ export class CallsService {
     status: "ended" | "cancelled",
     reason: string
   ) {
+    await this.recordings.markSessionTerminated(client, callId, actorId, "ad_hoc");
     await client.query(
       `update call_sessions
        set status = $2, ended_at = now(), end_reason = $3, version = version + 1, updated_at = now()
@@ -813,6 +825,7 @@ export class CallsService {
     const title = call.space_type === "open_group"
       ? call.space_name
       : counterpart?.display_name ?? "HahaTalk call";
+    const recording = await this.recordings.project(client, callId, viewerInternalId);
     return {
       callType: call.call_type,
       canDecline: !terminal && viewer.role !== "host" && ['invited', 'connecting'].includes(viewer.status),
@@ -820,6 +833,7 @@ export class CallsService {
       canJoin: !terminal && ['ringing', 'active'].includes(call.status) && ['invited', 'connecting', 'joined'].includes(viewer.status),
       canLeave: !terminal && ['connecting', 'joined'].includes(viewer.status),
       canShareScreen: !terminal && call.status === "active" && viewer.status === "joined",
+      canRequestRecording: this.recordings.canRequest(call.status, viewer.status, viewer.role, recording),
       createdAt: call.created_at.toISOString(),
       ...(call.ended_at ? { endedAt: call.ended_at.toISOString() } : {}),
       ...(call.end_reason ? { endReason: call.end_reason } : {}),
@@ -827,6 +841,7 @@ export class CallsService {
       id: call.id,
       isCreator: call.created_by === viewerInternalId,
       isIncoming: !terminal && viewer.role !== "host" && viewer.status === "invited",
+      ...(recording ? { recording } : {}),
       participants: participantResult.rows.map((participant) => ({
         invitedAt: participant.invited_at.toISOString(),
         isSelf: participant.user_id === viewerInternalId,

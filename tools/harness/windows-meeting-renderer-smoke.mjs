@@ -293,6 +293,10 @@ const screenshotPath = path.resolve(argument(
   "screenshot",
   path.join(process.cwd(), "apps", "desktop", "out", "stage6c-scheduled-meeting-role.png")
 ));
+const recordingScreenshotPath = path.resolve(argument(
+  "recording-screenshot",
+  path.join(process.cwd(), "apps", "desktop", "out", "stage6e-meeting-recording-consent.png")
+));
 const livekitExecutable = path.join(process.env.LOCALAPPDATA ?? "", "HahaTalkDev", "LiveKit", "1.13.3", "livekit-server.exe");
 const ownerPassword = "Stage6C!RendererOwner";
 const minaPassword = "Stage6C!RendererMina";
@@ -313,7 +317,12 @@ const application = spawn(executablePath, [`--remote-debugging-port=${debugPort}
     HAHATALK_USER_DATA_DIR: userDataRoot,
     LIVEKIT_API_KEY: "devkey",
     LIVEKIT_API_SECRET: "secret",
-    LIVEKIT_URL: livekit.url
+    LIVEKIT_URL: livekit.url,
+    LIVEKIT_EGRESS_ENABLED: "1",
+    LIVEKIT_EGRESS_S3_ACCESS_KEY: "renderer-test-access",
+    LIVEKIT_EGRESS_S3_BUCKET: "renderer-test-recordings",
+    LIVEKIT_EGRESS_S3_REGION: "ap-northeast-2",
+    LIVEKIT_EGRESS_S3_SECRET_KEY: "renderer-test-secret"
   },
   stdio: "ignore",
   windowsHide: true
@@ -390,6 +399,44 @@ try {
   const sharingMeeting = await apiRequest(runtime, mina.cookie, `/meetings/${meeting.id}`);
   assert(sharingMeeting.participants.find((participant) => participant.isSelf)?.screenShareStatus === "active", "Scheduled meeting did not persist the active speaker share.");
 
+  await apiRequest(runtime, owner.cookie, `/meetings/${meeting.id}/join`, { method: "POST", payload: {} });
+  await apiRequest(runtime, owner.cookie, `/meetings/${meeting.id}/connected`, { method: "POST", payload: {} });
+  await apiRequest(runtime, owner.cookie, `/meetings/${meeting.id}/recording/request`, { method: "POST", payload: {} });
+  await waitForExpression(
+    cdp,
+    "document.querySelector('.meeting-room .recording-panel')?.innerText.includes('녹화 동의 요청') && document.querySelectorAll('.meeting-room .recording-consent-list > div').length === 2",
+    "Installed meeting did not render its recording consent roster.",
+    180
+  );
+  const recordingLayout = await evaluate(cdp, `
+    (() => {
+      const desk = document.querySelector('.meeting-room').getBoundingClientRect();
+      const header = document.querySelector('.meeting-room .call-desk-header').getBoundingClientRect();
+      const controls = document.querySelector('.meeting-room .call-controls').getBoundingClientRect();
+      const panel = document.querySelector('.meeting-room .recording-panel').getBoundingClientRect();
+      return panel.top >= header.bottom - 1
+        && panel.bottom <= controls.top + 1
+        && panel.left >= desk.left
+        && panel.right <= desk.right + 1
+        && controls.height >= 60
+        && controls.bottom <= innerHeight + 1;
+    })()
+  `);
+  assert(recordingLayout, "Installed meeting recording panel overlaps controls or escapes the meeting room.");
+  await evaluate(cdp, "[...document.querySelectorAll('.meeting-room .recording-action.approve')].find((button) => button.innerText.includes('동의')).click()");
+  await waitForExpression(
+    cdp,
+    "document.querySelectorAll('.meeting-room .recording-consent-list > div[data-consent=\"granted\"]').length === 1",
+    "Installed meeting participant consent did not update."
+  );
+  await captureScreenshot(cdp, recordingScreenshotPath);
+  const cancelledRecording = await apiRequest(runtime, owner.cookie, `/meetings/${meeting.id}/recording/stop`, {
+    method: "POST",
+    payload: { reason: "host_stopped" }
+  });
+  assert(cancelledRecording.status === "aborted", "Installed meeting host could not cancel pending recording consent.");
+  await waitForExpression(cdp, "document.querySelector('.meeting-room .recording-panel')?.innerText.includes('녹화 요청 종료')", "Installed meeting recording terminal state did not render.");
+
   const current = await apiRequest(runtime, owner.cookie, `/meetings/${meeting.id}`);
   await apiRequest(runtime, owner.cookie, `/meetings/${meeting.id}/participants/${encodeURIComponent(mina.body.user.id)}/role`, {
     method: "PATCH",
@@ -437,7 +484,7 @@ try {
   for (let attempt = 0; attempt < 80 && isProcessRunning(application.pid); attempt += 1) await delay(125);
   assert(!isProcessRunning(application.pid), "Installed meeting renderer process remained after shutdown.");
   assert(!(await isPortOpen(runtime.databasePort)), "Installed meeting PostgreSQL remained reachable after shutdown.");
-  console.log(`Windows installed scheduled meeting passed: lobby, real SFU, speaker screen share, role-based screen/camera/mic revoke, layout, and screenshot ${screenshotPath}`);
+  console.log(`Windows installed scheduled meeting passed: lobby, real SFU, speaker screen share, recording consent UI, role-based screen/camera/mic revoke, layout, and screenshots ${screenshotPath}, ${recordingScreenshotPath}`);
 } finally {
   if (isProcessRunning(application.pid)) {
     await Promise.race([cdp?.send("Browser.close").catch(() => undefined) ?? Promise.resolve(), delay(1_000)]);

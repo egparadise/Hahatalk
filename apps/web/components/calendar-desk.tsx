@@ -214,6 +214,16 @@ export function CalendarDesk({ authSession, currentUser, onLogout, onOpenChat, o
         setMeetingError("");
       }
     });
+    socket.on("meeting:recording-updated", ({ sessionId }: { sessionId: string }) => {
+      void getJson<MeetingView>(`/meetings/${sessionId}`)
+        .then((next) => {
+          if (next.eventId === selectedOccurrence.id && next.occurrenceStartsAt === selectedOccurrence.occurrenceStartsAt) {
+            setMeeting(next);
+            setMeetingError("");
+          }
+        })
+        .catch(() => undefined);
+    });
     return () => { socket.close(); };
   }, [authSession.user.id, selectedOccurrence?.id, selectedOccurrence?.occurrenceStartsAt, selectedOccurrence?.space?.id]);
 

@@ -31,6 +31,7 @@ import {
   type LiveMediaControlsHandle,
   ScreenShareStage
 } from "./live-media-controls";
+import { RecordingControls } from "./recording-controls";
 
 type MediaTrack = { identity: string; sid: string; track: RemoteTrack };
 type MeetingPhase = "connecting" | "active" | "reconnecting" | "ended" | "error";
@@ -373,6 +374,14 @@ export function MeetingRoom({ meeting, onClose, onUpdated }: {
       {audioTracks.map((item) => <AttachedAudio key={item.sid} track={item.track} />)}
       {cameraWarning ? <div className="call-warning" role="status">{cameraWarning}</div> : null}
       {error ? <div className="call-error" role="alert">{error}</div> : null}
+      {phase === "active" || meeting.recording ? (
+        <RecordingControls
+          disabled={busy || phase !== "active"}
+          onUpdated={onUpdated}
+          session={meeting}
+          sessionPath={`/meetings/${meeting.id}`}
+        />
+      ) : null}
       <footer className="call-controls">
         {["active", "reconnecting"].includes(phase) ? (
           <>

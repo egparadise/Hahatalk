@@ -48,7 +48,11 @@
 | DB commit succeeds but realtime fails | Transactional outbox and retry worker |
 | Private photo becomes shared original | Separate owned asset from share grant; safe derivative and revoke |
 | GPS unintentionally disclosed | Default GPS-stripped derivative and explicit keep-location choice |
-| Recording starts without consent | Current consent snapshot before egress and visible recording state |
+| Recording starts without consent | Exact joined-participant snapshot, exact-policy unanimous append-only consent, provider start only after snapshot recheck, and continuous visible recording state |
+| Forged or replayed Egress state changes app state | Dedicated webhook content type, untouched raw body, LiveKit JWT/SHA-256 signature verification, provider-ID binding, and idempotent state application |
+| Recording stop is uncertain | Attempt provider stop, delete the media room on uncertainty, invalidate participant state/tokens, mark session failed, and append fail-closed audit evidence |
+| Client or audit leaks recording storage/provider identifiers | Keep Egress ID, provider room, object key, and S3 credentials server-only; emit only viewer-safe lifecycle projections and session-ID realtime hints |
+| End-user desktop exposes production provider credentials | Treat the embedded API as a local MVP runtime only; keep production LiveKit/Egress/S3 credentials in a centrally managed backend and secret manager, never in the shipped renderer or desktop environment |
 | Voice impersonation | Purpose-specific subject consent, encrypted embedding, watermark, audit, revoke/delete |
 | Remote control uses stale approval | Session-scoped short expiry, separate control grant, target emergency stop |
 | Electron renderer reaches native control | Context isolation, narrow preload API, signed separate support agent |
@@ -71,4 +75,7 @@
 - Confirm scheduled meetings bind to a real event occurrence and snapshot only the exact authorized attendees; a forged occurrence or future membership is rejected.
 - Confirm waiting users receive no token, attendees receive `canPublish=false`, and live speaker demotion unpublishes tracks and removes microphone/camera controls.
 - Confirm meeting REST/realtime/outbox projections contain random media identities only for exact visible participants and omit provider room, token, key, secret, and hidden-hub roster information; audit omits all provider identifiers.
+- Confirm recording requests snapshot only joined participants, reject policy mismatch, require every grant, block non-snapshot joins, and permit immediate participant revoke.
+- Confirm recording REST/realtime/audit projections omit provider Egress ID, provider room, object key, storage credentials, JWTs, and webhook signature material.
+- Confirm invalid Egress signatures and wrong webhook content types fail, duplicate states do not multiply durable events, and uncertain provider stop deletes the room and fails the session closed.
 - Confirm session cookies contain `HttpOnly` and `SameSite=Strict`, API JSON contains no token, and PostgreSQL contains only a 32-byte digest.

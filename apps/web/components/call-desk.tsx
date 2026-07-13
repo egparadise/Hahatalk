@@ -11,6 +11,7 @@ import {
   type LiveMediaControlsHandle,
   ScreenShareStage
 } from "./live-media-controls";
+import { RecordingControls } from "./recording-controls";
 
 type CallPhase = "waiting" | "connecting" | "active" | "reconnecting" | "ended" | "error";
 type MediaTrack = { identity: string; sid: string; track: RemoteTrack };
@@ -119,6 +120,14 @@ export function CallDesk({
       setPhase("ended");
     }
   }, [call.status]);
+
+  useEffect(() => {
+    if (!["ringing", "active"].includes(call.status)) return;
+    const timer = window.setInterval(() => {
+      void getJson<CallView>(`/calls/${call.id}`).then(onUpdated).catch(() => undefined);
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [call.id, call.status, onUpdated]);
 
   useEffect(() => () => {
     intentionalDisconnectRef.current = true;
@@ -237,6 +246,15 @@ export function CallDesk({
       {audioTracks.map((item) => <AttachedAudio key={item.sid} track={item.track} />)}
       {cameraWarning ? <div className="call-warning" role="status">{cameraWarning}</div> : null}
       {error ? <div className="call-error" role="alert">{error}</div> : null}
+
+      {phase === "active" || call.recording ? (
+        <RecordingControls
+          disabled={isActionBusy || phase !== "active"}
+          onUpdated={onUpdated}
+          session={call}
+          sessionPath={`/calls/${call.id}`}
+        />
+      ) : null}
 
       <footer className="call-controls">
         {phase === "waiting" ? (

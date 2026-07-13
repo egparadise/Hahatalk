@@ -110,6 +110,8 @@ async function startApi(port, webOrigin, livekitUrl) {
       LIVEKIT_API_KEY: apiKey,
       LIVEKIT_API_SECRET: apiSecret,
       LIVEKIT_URL: livekitUrl,
+      HAHATALK_TEST_EGRESS_DRIVER: "memory",
+      NODE_ENV: "test",
       PORT: String(port),
       SESSION_COOKIE_NAME: cookieName,
       WEB_ORIGIN: webOrigin
@@ -277,6 +279,15 @@ try {
   const mina = await signup(baseUrl, webOrigin, "mina@inviz.co.kr", "Stage6C!MinaPass", "Stage6C Mina", "char-focus-maker");
   const jun = await signup(baseUrl, webOrigin, "jun@inviz.co.kr", "Stage6C!JunPass", "Stage6C Jun", "char-calm-lead");
   const hana = await signup(baseUrl, webOrigin, "hana.customer@example.com", "Stage6C!HanaPass", "Stage6C Hana", "char-customer-guest");
+  const capabilities = await request(baseUrl, "/meetings/capabilities", { cookie: owner.cookie });
+  assert(
+    capabilities.response.status === 200
+      && capabilities.body.available
+      && capabilities.body.recording?.available
+      && capabilities.body.recording.policyVersion === "hahatalk-recording-v1",
+    "Meeting recording capability was not reported."
+  );
+  assert(!JSON.stringify(capabilities.body).includes(apiKey) && !JSON.stringify(capabilities.body).includes(apiSecret), "Meeting capabilities exposed provider credentials.");
 
   const now = new Date();
   const startsAt = new Date(now.getTime() + 10 * 60_000);
@@ -368,7 +379,7 @@ try {
     "Speaker token was not source-limited to microphone and camera."
   );
   assert(!JSON.stringify(junClaims.video?.canPublishSources).includes("screen_share"), "Initial meeting token granted screen sharing before an explicit request.");
-  assert(!junClaims.video?.roomAdmin && !junClaims.video?.canPublishData, "Speaker token granted moderation or data publishing.");
+  assert(!junClaims.video?.roomAdmin && !junClaims.video?.roomRecord && !junClaims.video?.canPublishData, "Speaker token granted moderation, recording, or data publishing.");
   const junConnected = await mutate(baseUrl, webOrigin, jun.cookie, `/meetings/${meeting.id}/connected`, {});
   assert(junConnected.canShareScreen, "Connected speaker did not receive the screen-share capability.");
   await mutate(baseUrl, webOrigin, jun.cookie, `/meetings/${meeting.id}/screen-share/active`, {}, "POST", 409);
@@ -384,6 +395,88 @@ try {
   const ownerClaims = await new TokenVerifier(apiKey, apiSecret).verify(ownerJoin.token);
   assert(ownerClaims.sub !== owner.userId && ownerClaims.video?.room === groupRoomName, "Host token exposed a stable app identity or wrong room.");
   await mutate(baseUrl, webOrigin, owner.cookie, `/meetings/${meeting.id}/connected`, {});
+
+  const minaJoin = await mutate(baseUrl, webOrigin, mina.cookie, `/meetings/${meeting.id}/join`, {});
+  const minaClaims = await new TokenVerifier(apiKey, apiSecret).verify(minaJoin.token);
+  assert(
+    minaClaims.video?.room === groupRoomName
+      && !minaClaims.video?.roomAdmin
+      && !minaClaims.video?.roomRecord,
+    "Cohost received an over-privileged provider token."
+  );
+  await mutate(baseUrl, webOrigin, mina.cookie, `/meetings/${meeting.id}/connected`, {});
+
+  await mutate(baseUrl, webOrigin, jun.cookie, `/meetings/${meeting.id}/recording/request`, {}, "POST", 403);
+  const recordingRealtime = nextEvent(
+    ownerSocket,
+    "meeting:recording-updated",
+    (payload) => payload.sessionId === meeting.id
+  );
+  const deniedRequest = await mutate(baseUrl, webOrigin, mina.cookie, `/meetings/${meeting.id}/recording/request`, {});
+  assert(
+    deniedRequest.status === "consent_pending"
+      && deniedRequest.participants.length === 3
+      && deniedRequest.participants.some((participant) => participant.role === "cohost"),
+    "Cohost recording request did not snapshot all connected meeting participants."
+  );
+  const recordingRealtimePayload = await recordingRealtime;
+  assert(Object.keys(recordingRealtimePayload).length === 1, "Meeting recording realtime payload exposed private state.");
+  await mutate(
+    baseUrl,
+    webOrigin,
+    owner.cookie,
+    `/meetings/${meeting.id}/recording/consent`,
+    { decision: "granted", policyVersion: "hahatalk-recording-v1" }
+  );
+  const deniedRecording = await mutate(
+    baseUrl,
+    webOrigin,
+    jun.cookie,
+    `/meetings/${meeting.id}/recording/consent`,
+    { decision: "denied", policyVersion: "hahatalk-recording-v1" }
+  );
+  assert(deniedRecording.status === "consent_denied" && deniedRecording.myConsentStatus === "denied", "Meeting recording denial did not close the request.");
+
+  const approvedRequest = await mutate(baseUrl, webOrigin, mina.cookie, `/meetings/${meeting.id}/recording/request`, {});
+  assert(approvedRequest.id !== deniedRequest.id, "Denied meeting recording request was incorrectly reused.");
+  await mutate(
+    baseUrl,
+    webOrigin,
+    owner.cookie,
+    `/meetings/${meeting.id}/recording/consent`,
+    { decision: "granted", policyVersion: "hahatalk-recording-v1" }
+  );
+  await mutate(
+    baseUrl,
+    webOrigin,
+    jun.cookie,
+    `/meetings/${meeting.id}/recording/consent`,
+    { decision: "granted", policyVersion: "hahatalk-recording-v1" }
+  );
+  const cohostReady = await mutate(
+    baseUrl,
+    webOrigin,
+    mina.cookie,
+    `/meetings/${meeting.id}/recording/consent`,
+    { decision: "granted", policyVersion: "hahatalk-recording-v1" }
+  );
+  assert(cohostReady.status === "consent_granted" && cohostReady.allConsented && cohostReady.canStart, "Cohost did not receive start control after unanimous consent.");
+  await mutate(baseUrl, webOrigin, jun.cookie, `/meetings/${meeting.id}/recording/start`, {}, "POST", 403);
+  const activeRecording = await mutate(baseUrl, webOrigin, mina.cookie, `/meetings/${meeting.id}/recording/start`, {});
+  assert(activeRecording.status === "recording" && activeRecording.canStop, "Cohost could not start an unanimously approved recording.");
+  assert(
+    !JSON.stringify(activeRecording).includes("provider_")
+      && !JSON.stringify(activeRecording).includes("recordings/"),
+    "Meeting recording projection exposed provider or storage internals."
+  );
+  const completedRecording = await mutate(
+    baseUrl,
+    webOrigin,
+    jun.cookie,
+    `/meetings/${meeting.id}/recording/stop`,
+    { reason: "consent_revoked" }
+  );
+  assert(completedRecording.status === "ready" && completedRecording.myConsentStatus === "revoked", "Speaker could not revoke recording consent immediately.");
 
   const versionAfterJoin = (await request(baseUrl, `/meetings/${meeting.id}`, { cookie: owner.cookie })).body.version;
   const providerSyncFailure = await request(baseUrl, `/meetings/${meeting.id}/participants/${jun.userId}/role`, {
@@ -401,7 +494,12 @@ try {
   await stopChild(api.child);
   api = await startApi(apiPort, webOrigin, livekit.serviceUrl);
   const restartMeeting = await request(baseUrl, `/meetings/${meeting.id}`, { cookie: owner.cookie });
-  assert(restartMeeting.response.status === 200 && restartMeeting.body.status === "active", "Meeting state did not survive API restart.");
+  assert(
+    restartMeeting.response.status === 200
+      && restartMeeting.body.status === "active"
+      && restartMeeting.body.recording?.status === "ready",
+    "Meeting and completed recording state did not survive API restart."
+  );
   const ended = await mutate(baseUrl, webOrigin, owner.cookie, `/meetings/${meeting.id}/end`, { version: restartMeeting.body.version });
   assert(ended.status === "ended" && ended.endReason === "host_ended", "Host did not end the scheduled meeting.");
   await waitForRoomCount(livekit.client, 0);
@@ -510,6 +608,32 @@ try {
   assert(migration.rowCount === 1 && /^[0-9a-f]{64}$/.test(migration.rows[0].checksum), "Migration 008 checksum evidence is missing.");
   const screenMigration = await database.query("select checksum from schema_migrations where version = '009_screen_share_device_background.sql'");
   assert(screenMigration.rowCount === 1 && /^[0-9a-f]{64}$/.test(screenMigration.rows[0].checksum), "Migration 009 checksum evidence is missing.");
+  const recordingMigration = await database.query("select checksum from schema_migrations where version = '010_recording_consent_egress.sql'");
+  assert(recordingMigration.rowCount === 1 && /^[0-9a-f]{64}$/.test(recordingMigration.rows[0].checksum), "Migration 010 checksum evidence is missing.");
+  const meetingRecordings = await database.query(
+    `select status, provider_egress_id, output_object_key, consent_snapshot_json
+     from call_recordings where call_session_id = $1 order by requested_at`,
+    [meeting.id]
+  );
+  assert(
+    meetingRecordings.rowCount === 2
+      && meetingRecordings.rows[0].status === "consent_denied"
+      && meetingRecordings.rows[1].status === "ready"
+      && meetingRecordings.rows[1].provider_egress_id
+      && meetingRecordings.rows[1].consent_snapshot_json.participants.length === 3,
+    "Meeting recording lifecycle or consent snapshot was not persisted."
+  );
+  const meetingConsent = await database.query(
+    `select decision from consent_records
+     where consent_type = 'recording' and scope_type = 'call_recording'
+     order by created_at`
+  );
+  assert(
+    meetingConsent.rows.filter((row) => row.decision === "granted").length === 4
+      && meetingConsent.rows.some((row) => row.decision === "denied")
+      && meetingConsent.rows.some((row) => row.decision === "revoked"),
+    "Meeting recording consent evidence was not append-only or complete."
+  );
   const audit = await database.query(
     `select action, metadata_json::text as metadata from audit_logs
      where target_type = 'call_session' and action like 'meeting.%' order by created_at`
@@ -529,11 +653,18 @@ try {
   ]) {
     assert(audit.rows.some((row) => row.action === action), `Meeting audit action is missing: ${action}`);
   }
+  const recordingAudit = await database.query(
+    `select action, metadata_json::text as metadata from audit_logs
+     where target_type = 'call_recording' order by created_at`
+  );
+  for (const action of ["recording.consent_requested", "recording.consent_granted", "recording.consent_denied", "recording.start_requested", "recording.provider_state", "recording.consent_revoked"]) {
+    assert(recordingAudit.rows.some((row) => row.action === action), `Meeting recording audit action is missing: ${action}`);
+  }
   const outbox = await database.query("select payload_json::text as payload from outbox_events where aggregate_type = 'meeting'");
-  const durableText = JSON.stringify({ audit: audit.rows, outbox: outbox.rows });
+  const durableText = JSON.stringify({ audit: audit.rows, outbox: outbox.rows, recordingAudit: recordingAudit.rows });
   assert(!durableText.includes(apiSecret) && !durableText.includes("eyJ") && !durableText.includes(groupRoomName), "Meeting audit/outbox exposed a secret, token, or provider room name.");
 
-  console.log("Scheduled meeting integration passed: occurrence binding, roles, screen-share role boundaries and grant rollback, waiting/admission, scoped tokens, hub privacy, guest boundary, restart, provider failure, and audit verified.");
+  console.log("Scheduled meeting integration passed: occurrence binding, roles, screen sharing, unanimous recording consent with cohost control and revoke, waiting/admission, scoped tokens, hub privacy, guest boundary, restart, provider failure, and audit verified.");
 } finally {
   ownerSocket?.close();
   await stopChild(api?.child).catch(() => undefined);
