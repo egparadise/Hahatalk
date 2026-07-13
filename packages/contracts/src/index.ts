@@ -47,6 +47,10 @@ export type CalendarEventStatus = "scheduled" | "cancelled";
 export type CalendarResponseStatus = "needs_action" | "accepted" | "declined" | "tentative";
 export type CalendarRecurrenceFrequency = "daily" | "weekly" | "monthly";
 export type CalendarWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type CallType = "voice" | "video";
+export type CallStatus = "starting" | "ringing" | "active" | "ended" | "cancelled" | "failed" | "expired";
+export type CallParticipantStatus = "invited" | "connecting" | "joined" | "declined" | "left" | "removed" | "missed";
+export type CallParticipantRole = "host" | "participant";
 
 export interface Organization {
   id: string;
@@ -621,6 +625,59 @@ export interface ConversationListItem {
   unreadCount: number;
   lastMessageAt?: string;
   lastMessagePreview?: string;
+}
+
+export interface CallCapabilities {
+  available: boolean;
+  provider: "livekit";
+  deployment: "local" | "remote" | "unconfigured";
+  tokenTtlSeconds: number;
+  reason?: string;
+}
+
+export interface CallParticipantView {
+  mediaIdentity: string;
+  person: Pick<User, "id" | "displayName" | "character">;
+  role: CallParticipantRole;
+  status: CallParticipantStatus;
+  isSelf: boolean;
+  invitedAt: string;
+  joinedAt?: string;
+  leftAt?: string;
+}
+
+export interface CallView {
+  id: string;
+  spaceId: string;
+  callType: CallType;
+  status: CallStatus;
+  title: string;
+  isCreator: boolean;
+  isIncoming: boolean;
+  canJoin: boolean;
+  canDecline: boolean;
+  canLeave: boolean;
+  canEnd: boolean;
+  participants: CallParticipantView[];
+  createdAt: string;
+  expiresAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  endReason?: string;
+}
+
+export interface StartCallInput {
+  clientCallId: string;
+  spaceId: string;
+  callType: CallType;
+  targetUserIds: string[];
+}
+
+export interface CallJoinView {
+  call: CallView;
+  serverUrl: string;
+  token: string;
+  tokenExpiresAt: string;
 }
 
 export interface MvpSnapshot extends ConversationView {

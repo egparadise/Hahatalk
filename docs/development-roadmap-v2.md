@@ -81,12 +81,14 @@ Exit: fresh-DB and installed-Windows tests prove chat independence, resumable in
 ## Stage 6 - Schedule, Voice, And Video
 
 1. Event CRUD, bounded recurrence, exact-attendee snapshots, RSVP, reminders, and Windows calendar desk. Complete.
-2. LiveKit token service and ad-hoc voice/video calls.
+2. LiveKit token service and ad-hoc voice/video calls. Complete for Windows in Stage 6B.
 3. Scheduled meeting lobby and participant roles.
 4. Screen sharing, device controls, background blur/image.
 5. Recording consent and egress lifecycle.
 
 Exit: web, Windows desktop, Android, and iOS capability matrix is tested; unsupported controls are hidden rather than simulated.
+
+Stage 6B exit evidence: fresh PostgreSQL privacy/state tests use the pinned official LiveKit Windows server, and the installed Electron renderer proves incoming-call UI, a real SFU join, camera frames, microphone controls, leave/end, and provider-room cleanup. Production external use still requires a trusted `wss` endpoint and TURN/TLS deployment.
 
 ## Stage 7 - Personal Broadcast
 

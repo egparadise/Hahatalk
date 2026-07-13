@@ -63,7 +63,7 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Move the single-process outbox publisher to a leased multi-replica worker before horizontal API scaling.
 - Add Redis presence without exposing hub participants to one another.
 - Add the managed S3 adapter, production ClamAV service, retention policy, OCR/Office conversion, and video/audio derivative workers.
-- Add LiveKit token service, E2EE key policy, call state, and consented recording.
+- Deploy a trusted LiveKit `wss` and TURN/TLS service; Stage 6B already provides short-lived call tokens and durable ad-hoc call state. E2EE key policy and consented recording remain later work.
 - Add AI worker services; chat must never await them.
 - Add a support-agent security review before remote control code is enabled.
 

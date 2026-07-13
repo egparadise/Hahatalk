@@ -22,6 +22,8 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Exact-policy-version consent for shared family/team collections, viewer-safe rosters, revoke/re-consent, and append-only policy/audit history.
 - A PC contacts desk for collection/member management and restricted guest consent without exposing owner-private relationship data.
 - A timezone-safe PC calendar desk with private, selected, and exact current-room snapshot schedules, bounded recurrence, RSVP, reminders, optimistic edits, cancellation, and pop-out windows.
+- LiveKit-backed ad-hoc voice/video calls with exact conversation snapshots, short-lived least-privilege tokens, incoming-call realtime state, microphone/camera controls, reconnect UI, and host/participant end paths.
+- Hidden-hub calls remain owner-to-one-spoke in Stage 6B so no other spoke identity can appear in a provider room; open groups support exact multi-user call snapshots.
 - Internal and guest invite affordances with guest-safe permission labels.
 - Authenticated PDF.js, image, video, audio, and text previews without public storage URLs or third-party document viewers.
 - Durable screen capture archive/share flow for PC browsers/desktops that support `getDisplayMedia`.
@@ -55,11 +57,14 @@ npm run conversation:integration
 npm run contacts:integration
 npm run media:integration
 npm run calendar:integration
+npm run infra:livekit:portable
+npm run calls:integration
 npm run desktop:renderer-smoke
+npm run desktop:call-renderer-smoke
 npm run harness
 ```
 
-The web MVP runs at `http://127.0.0.1:3000`. The API now fails closed when PostgreSQL is unavailable. `npm run infra:up` starts the shared PostgreSQL/Redis/object-storage development stack; the portable command starts only PostgreSQL 18.4 under `%LOCALAPPDATA%\HahaTalkDev` for Windows machines whose Docker WSL engine is unavailable.
+The web MVP runs at `http://127.0.0.1:3000`. The API fails closed when PostgreSQL is unavailable. `npm run infra:up` starts the shared PostgreSQL/Redis/object-storage development stack; the portable commands prepare PostgreSQL 18.4 and the checksum-pinned LiveKit 1.13.3 Windows test server under `%LOCALAPPDATA%\HahaTalkDev`. The LiveKit development server is loopback-only and is not an external deployment. Real users require configured `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` backed by trusted TLS and TURN.
 
 The Windows installer is generated at `apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe`. It is currently unsigned and intended for local development validation until a Windows code-signing certificate is configured.
 
@@ -97,4 +102,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-4-contacts-family-managed-groups.md`: Stage 4 relationship authorization, versioned consent, viewer projections, PC UX, and privacy harness.
 - `docs/stage-5-media-document-desk.md`: Stage 5 resumable upload, inspection, object storage, viewer grants, PDF/media UX, and verification contract.
 - `docs/stage-6a-schedule-rsvp-reminders.md`: Stage 6A timezone, recurrence, snapshot authorization, RSVP, reminders, calendar UX, and verification contract.
+- `docs/stage-6b-livekit-call-core.md`: Stage 6B call state, privacy projection, least-privilege tokens, LiveKit provider boundary, PC UX, and verification contract.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

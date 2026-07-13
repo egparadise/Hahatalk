@@ -150,12 +150,17 @@ export type OutboxEventRow = {
   attempt_count: number;
   event_type: string;
   id: string;
-  payload_json: { deletedAt?: string; recipientInternalId?: string };
+  payload_json: {
+    deletedAt?: string;
+    recipientInternalId?: string;
+    realtimeEvent?: string;
+    realtimePayload?: unknown;
+  };
 };
 
 type RealtimeEnvelope = {
-  event: "message:created" | "message:deleted" | "message:delivery-updated" | "message:updated";
-  payload: Message | MessageDeleteResult;
+  event: string;
+  payload: unknown;
   publicUserId: string;
 };
 
@@ -879,6 +884,16 @@ export class ConversationService {
     const publicUserId = recipient.rows[0]?.public_id;
     if (!publicUserId) {
       return undefined;
+    }
+    if (
+      event.payload_json.realtimeEvent?.startsWith("call:")
+      && event.payload_json.realtimePayload !== undefined
+    ) {
+      return {
+        event: event.payload_json.realtimeEvent,
+        payload: event.payload_json.realtimePayload,
+        publicUserId
+      };
     }
     if (event.event_type === "conversation.message.deleted") {
       return {

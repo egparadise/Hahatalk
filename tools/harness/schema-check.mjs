@@ -43,6 +43,8 @@ const requiredTables = [
   "event_reminders",
   "event_reminder_receipts",
   "call_sessions",
+  "call_participants",
+  "call_events",
   "broadcast_channels",
   "avatar_profiles",
   "ai_model_configs",
@@ -92,7 +94,10 @@ const requiredFragments = [
   "contact_collection_consents_effective_idx",
   "recurrence_ends_at",
   "event_attendees_viewer_window_idx",
-  "occurrence_start_at"
+  "occurrence_start_at",
+  "provider_room_name",
+  "call_participants_user_status_idx",
+  "token_version",
 ];
 
 for (const fragment of requiredFragments) {
@@ -120,6 +125,7 @@ const governanceFiles = [
   "apps/api/migrations/004_contacts_family_managed_groups.sql",
   "apps/api/migrations/005_media_document_desk.sql",
   "apps/api/migrations/006_schedule_rsvp_reminders.sql"
+  ,"apps/api/migrations/007_livekit_call_core.sql"
 ];
 
 for (const file of governanceFiles) {

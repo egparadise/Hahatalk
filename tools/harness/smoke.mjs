@@ -17,6 +17,8 @@ const requiredFiles = [
   "apps/api/migrations/003_persisted_conversation_core.sql",
   "apps/api/migrations/004_contacts_family_managed_groups.sql",
   "apps/api/migrations/005_media_document_desk.sql",
+  "apps/api/migrations/006_schedule_rsvp_reminders.sql",
+  "apps/api/migrations/007_livekit_call_core.sql",
   "apps/api/src/invitations/invitation.controller.ts",
   "apps/api/src/invitations/invitation.service.ts",
   "apps/api/src/modules/chat.controller.ts",
@@ -27,6 +29,10 @@ const requiredFiles = [
   "apps/api/src/media/media.service.ts",
   "apps/api/src/media/media-inspector.ts",
   "apps/api/src/media/local-object-store.ts",
+  "apps/api/src/calls/calls.controller.ts",
+  "apps/api/src/calls/calls.service.ts",
+  "apps/api/src/calls/livekit-provider.service.ts",
+  "apps/web/components/call-desk.tsx",
   "apps/web/components/media-panel.tsx",
   "apps/web/components/pdf-viewer.tsx",
   "apps/desktop/main.cjs",
@@ -39,6 +45,7 @@ const requiredFiles = [
   "docs/stage-3-persisted-conversations.md",
   "docs/stage-4-contacts-family-managed-groups.md",
   "docs/stage-5-media-document-desk.md",
+  "docs/stage-6b-livekit-call-core.md",
   "docs/schema.sql",
   "AGENTS.md",
   ".agents/skills/hahatalk-feature-stage/SKILL.md",
@@ -88,7 +95,11 @@ const requiredTerms = [
   "utilityProcess.fork",
   "requestSingleInstanceLock",
   "setDisplayMediaRequestHandler",
-  "Electron Forge"
+  "Electron Forge",
+  "@Controller(\"calls\")",
+  "call_participants",
+  "canPublishSources",
+  "call:incoming",
 ];
 
 for (const file of requiredFiles) {
@@ -110,6 +121,7 @@ const source = [
   readFileSync(join(root, "apps/api/migrations/003_persisted_conversation_core.sql"), "utf8"),
   readFileSync(join(root, "apps/api/migrations/004_contacts_family_managed_groups.sql"), "utf8"),
   readFileSync(join(root, "apps/api/migrations/005_media_document_desk.sql"), "utf8"),
+  readFileSync(join(root, "apps/api/migrations/007_livekit_call_core.sql"), "utf8"),
   readFileSync(join(root, "apps/api/src/invitations/invitation.controller.ts"), "utf8"),
   readFileSync(join(root, "apps/api/src/invitations/invitation.service.ts"), "utf8"),
   readFileSync(join(root, "apps/api/src/modules/chat.gateway.ts"), "utf8"),
@@ -121,6 +133,10 @@ const source = [
   readFileSync(join(root, "apps/api/src/media/local-object-store.ts"), "utf8"),
   readFileSync(join(root, "apps/web/components/media-panel.tsx"), "utf8"),
   readFileSync(join(root, "apps/web/components/pdf-viewer.tsx"), "utf8"),
+  readFileSync(join(root, "apps/api/src/calls/calls.controller.ts"), "utf8"),
+  readFileSync(join(root, "apps/api/src/calls/calls.service.ts"), "utf8"),
+  readFileSync(join(root, "apps/api/src/calls/livekit-provider.service.ts"), "utf8"),
+  readFileSync(join(root, "apps/web/components/call-desk.tsx"), "utf8"),
   readFileSync(join(root, "apps/desktop/main.cjs"), "utf8"),
   readFileSync(join(root, "docs/windows-desktop-runtime.md"), "utf8"),
   readFileSync(join(root, "packages/contracts/src/index.ts"), "utf8"),
@@ -129,6 +145,7 @@ const source = [
   readFileSync(join(root, "docs/stage-3-persisted-conversations.md"), "utf8"),
   readFileSync(join(root, "docs/stage-4-contacts-family-managed-groups.md"), "utf8"),
   readFileSync(join(root, "docs/stage-5-media-document-desk.md"), "utf8"),
+  readFileSync(join(root, "docs/stage-6b-livekit-call-core.md"), "utf8"),
   readFileSync(join(root, "docs/schema.sql"), "utf8"),
   readFileSync(join(root, "AGENTS.md"), "utf8")
 ].join("\n");

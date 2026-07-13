@@ -32,6 +32,9 @@
 | Password database is stolen | Argon2id with OWASP baseline memory/time parameters and per-hash salt |
 | Manipulated client targets another participant | Resolve deliveries server-side; non-owner hub messages normalize to owner only |
 | Shared socket leaks full message | User-specific authenticated channels and per-viewer projection |
+| LiveKit token joins another room or publishes screen/data | API-generated random room/identity, two-minute JWT, exact `roomJoin`, subscribe, and microphone/camera source grants only |
+| Hidden-hub call reveals another spoke | Stage 6B permits exactly one owner-spoke media room; multi-spoke calls require separate edge rooms and a future bridge |
+| Ended self-hosted token reconnects | Stop token issuance at terminal app state, increment participant token version, delete provider room, and keep join TTL short |
 | Invitation database reveals usable code | Return raw code once; store only a 32-byte SHA-256 digest; never log it |
 | Invitation is replayed or accepted concurrently | `SELECT FOR UPDATE`, use count 1, token digest scrubbing, terminal status checks |
 | Client fakes approval or approval count | Snapshot eligible approvers server-side and derive progress from immutable decisions |
@@ -60,4 +63,6 @@
 - Confirm expired/revoked/declined/accepted invitation codes fail and concurrent acceptance has exactly one success.
 - Confirm consent/audit JSON excludes raw invitation code, cookie token, and password.
 - Confirm guest UI and API expose only owner/self direct projection and no invitation management controls.
+- Confirm hub call REST/realtime/outbox/audit projections contain only owner and the selected spoke, with no hub name, count, other identity, provider room, token, key, or secret.
+- Decode test join tokens and confirm random identity, exact room, short expiry, microphone/camera-only source grants, no data/admin/create/record grants, and different identities per user.
 - Confirm session cookies contain `HttpOnly` and `SameSite=Strict`, API JSON contains no token, and PostgreSQL contains only a 32-byte digest.

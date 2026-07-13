@@ -7,6 +7,7 @@ import { ChatModule } from "./modules/chat.module.js";
 import { ContactsModule } from "./contacts/contacts.module.js";
 import { MediaModule } from "./media/media.module.js";
 import { CalendarModule } from "./calendar/calendar.module.js";
+import { CallsModule } from "./calls/calls.module.js";
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { CalendarModule } from "./calendar/calendar.module.js";
     ContactsModule,
     ChatModule,
     MediaModule,
-    CalendarModule
+    CalendarModule,
+    CallsModule
   ]
 })
 export class AppModule {}

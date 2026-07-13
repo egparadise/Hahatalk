@@ -607,27 +607,52 @@ create table event_reminder_receipts (
 
 create table call_sessions (
   id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
   space_id uuid not null references conversation_spaces(id) on delete cascade,
-  event_id uuid references events(id) on delete set null,
   created_by uuid not null references users(id),
-  call_type text not null check (call_type in ('voice', 'video', 'webinar', 'screen_share')),
-  provider text not null default 'livekit',
-  provider_room_id text unique,
-  status text not null check (status in ('scheduled', 'lobby', 'active', 'ended', 'cancelled', 'failed')),
-  background_mode text check (background_mode in ('none', 'blur', 'image', 'avatar')),
+  call_type text not null check (call_type in ('voice', 'video')),
+  provider text not null default 'livekit' check (provider = 'livekit'),
+  provider_room_name text not null unique,
+  status text not null check (status in ('starting', 'ringing', 'active', 'ended', 'cancelled', 'failed', 'expired')),
+  version integer not null default 1 check (version > 0),
+  expires_at timestamptz not null,
   started_at timestamptz,
   ended_at timestamptz,
-  created_at timestamptz not null default now()
+  end_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check ((status in ('ended', 'cancelled', 'failed', 'expired')) = (ended_at is not null))
 );
 
 create table call_participants (
   call_session_id uuid not null references call_sessions(id) on delete cascade,
   user_id uuid not null references users(id),
-  role text not null check (role in ('host', 'cohost', 'speaker', 'attendee', 'viewer')),
+  role text not null check (role in ('host', 'participant')),
+  status text not null check (status in ('invited', 'connecting', 'joined', 'declined', 'left', 'removed', 'missed')),
+  provider_identity text not null unique,
+  can_publish_audio boolean not null default true,
+  can_publish_video boolean not null default false,
+  token_version integer not null default 1 check (token_version > 0),
+  invited_at timestamptz not null default now(),
+  connecting_at timestamptz,
   joined_at timestamptz,
   left_at timestamptz,
-  media_state_json jsonb not null default '{}',
+  declined_at timestamptz,
+  updated_at timestamptz not null default now(),
   primary key (call_session_id, user_id)
+);
+
+create index call_participants_user_status_idx
+  on call_participants(user_id, status, invited_at desc);
+
+create table call_events (
+  id uuid primary key default gen_random_uuid(),
+  call_session_id uuid not null references call_sessions(id) on delete cascade,
+  actor_id uuid references users(id),
+  participant_id uuid references users(id),
+  event_type text not null,
+  metadata_json jsonb not null default '{}',
+  created_at timestamptz not null default now()
 );
 
 create table call_recordings (

@@ -60,6 +60,9 @@ import {
   type AiJob,
   type Attachment,
   type AudienceType,
+  type CallCapabilities,
+  type CallType,
+  type CallView,
   type CreatedMembershipInvitation,
   type ConversationListItem,
   type ConversationView,
@@ -85,6 +88,7 @@ import { ContactsDesk } from "./contacts-desk";
 import { CalendarDesk } from "./calendar-desk";
 import { MediaPanel, type MediaUploadTaskView } from "./media-panel";
 import { PdfViewer } from "./pdf-viewer";
+import { CallDesk } from "./call-desk";
 
 type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
 type ReadReportRow = ReturnType<typeof buildReadReport>[number];
@@ -690,6 +694,15 @@ function ChatDesk({
   const [retryUpload, setRetryUpload] = useState<{ file: File; source: MediaUploadSource } | null>(null);
   const [isConfirmingRead, setIsConfirmingRead] = useState(false);
   const [readReportRows, setReadReportRows] = useState<ReadReportRow[] | undefined>();
+  const [callCapabilities, setCallCapabilities] = useState<CallCapabilities>({
+    available: false,
+    deployment: "unconfigured",
+    provider: "livekit",
+    tokenTtlSeconds: 120
+  });
+  const [calls, setCalls] = useState<CallView[]>([]);
+  const [selectedCallId, setSelectedCallId] = useState("");
+  const [isCallAction, setIsCallAction] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -749,6 +762,12 @@ function ChatDesk({
         ? [...current.filter((candidate) => candidate.userId !== update.userId), update]
         : current.filter((candidate) => candidate.userId !== update.userId));
     });
+    const applyCall = (call: CallView) => {
+      setCalls((current) => [call, ...current.filter((candidate) => candidate.id !== call.id)]);
+      if (call.isIncoming) setSelectedCallId(call.id);
+    };
+    socket.on("call:incoming", applyCall);
+    socket.on("call:updated", applyCall);
     return () => {
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       socket.close();
@@ -783,6 +802,10 @@ function ChatDesk({
     ? selectedAttachment
     : attachments.find(({ attachment }) => attachment.mimeType === "application/pdf")?.attachment;
   const replyToMessage = messages.find((message) => message.id === replyToId);
+  const selectedCall = calls.find((call) => call.id === selectedCallId);
+  const currentLiveCall = calls.find((call) => (
+    call.spaceId === activeSpaceId && ["starting", "ringing", "active"].includes(call.status)
+  ));
 
   const targetUsers = roomUsers.filter((user) => user.id !== currentUser.id);
   const currentRoomMembership = roomMembers.find((member) => member.userId === currentUser.id);
@@ -810,6 +833,42 @@ function ChatDesk({
 
     const counterpartId = roomPresentation.visibleMemberIds.find((userId) => userId !== currentUser.id);
     return { audienceType: "private" as const, targetUserIds: counterpartId ? [counterpartId] : [] };
+  }
+
+  async function startOrOpenCall(callType: CallType) {
+    if (currentLiveCall) {
+      setSelectedCallId(currentLiveCall.id);
+      return;
+    }
+    if (!callCapabilities.available) {
+      setNotice(callCapabilities.reason ?? "통화 서버가 설정되지 않았습니다.");
+      return;
+    }
+    const effectiveAudience = getEffectiveAudience();
+    if (roomPresentation.canSelectAudience && effectiveAudience.targetUserIds.length !== 1) {
+      setNotice("숨김 허브 통화는 대화 대상을 한 명만 선택해야 합니다.");
+      return;
+    }
+    setIsCallAction(true);
+    try {
+      const call = await postJson<CallView>("/calls", {
+        callType,
+        clientCallId: `web-call-${crypto.randomUUID()}`,
+        spaceId: activeSpaceId,
+        targetUserIds: effectiveAudience.targetUserIds
+      });
+      setCalls((current) => [call, ...current.filter((candidate) => candidate.id !== call.id)]);
+      setSelectedCallId(call.id);
+      setNotice(`${call.title} ${callType === "video" ? "영상" : "음성"} 통화를 시작했습니다.`);
+    } catch (error) {
+      setNotice(`통화 시작 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsCallAction(false);
+    }
+  }
+
+  function applyCallUpdate(call: CallView) {
+    setCalls((current) => [call, ...current.filter((candidate) => candidate.id !== call.id)]);
   }
 
   function applyConversationView(view: ConversationView) {
@@ -860,11 +919,13 @@ function ChatDesk({
     setSyncError("");
 
     try {
-      const [snapshot, invitationRows, sessionRows, library] = await Promise.all([
+      const [snapshot, invitationRows, sessionRows, library, capabilities, callRows] = await Promise.all([
         getJson<MvpSnapshot>(`/mvp?spaceId=${encodeURIComponent(activeSpaceIdRef.current)}`),
         getJson<MembershipInvitationView[]>("/invitations"),
         getJson<DeviceSessionView[]>("/auth/sessions"),
-        getJson<MediaLibraryView>("/media/library")
+        getJson<MediaLibraryView>("/media/library"),
+        getJson<CallCapabilities>("/calls/capabilities"),
+        getJson<CallView[]>(`/calls?spaceId=${encodeURIComponent(activeSpaceIdRef.current)}`)
       ]);
       applyConversationView(snapshot);
       setSpaces(snapshot.spaces ?? []);
@@ -872,6 +933,8 @@ function ChatDesk({
       setInvitations(invitationRows);
       setSessions(sessionRows);
       setMediaLibrary(library);
+      setCallCapabilities(capabilities);
+      setCalls(callRows);
       if (library.assets[0]) setSelectedAssetId((current) => current || library.assets[0]!.id);
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : "업무방 동기화 실패");
@@ -889,7 +952,15 @@ function ChatDesk({
       activeSpaceIdRef.current = spaceId;
       applyConversationView(view);
       socketRef.current?.emit("room:join", { spaceId });
-      await refreshSpaceList();
+      const [spaceRows, callRows] = await Promise.all([
+        getJson<ConversationListItem[]>("/spaces"),
+        getJson<CallView[]>(`/calls?spaceId=${encodeURIComponent(spaceId)}`)
+      ]);
+      setSpaces(spaceRows);
+      setCalls((current) => [
+        ...callRows,
+        ...current.filter((call) => call.spaceId !== spaceId && call.id === selectedCallId)
+      ]);
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : "대화방을 열지 못했습니다.");
     } finally {
@@ -1550,10 +1621,24 @@ function ChatDesk({
             <button className="icon-button" onClick={() => void refreshSnapshot()} title="업무방 새로고침" type="button">
               <RefreshCw size={18} />
             </button>
-            <button className="icon-button" onClick={() => setNotice("음성통화는 LiveKit 연결 단계에서 활성화됩니다.")} title="음성통화" type="button">
+            <button
+              className="icon-button"
+              data-active={Boolean(currentLiveCall)}
+              disabled={isCallAction || (!callCapabilities.available && !currentLiveCall)}
+              onClick={() => void startOrOpenCall("voice")}
+              title={callCapabilities.available ? "음성 통화" : callCapabilities.reason ?? "통화 서버 설정 필요"}
+              type="button"
+            >
               <Phone size={18} />
             </button>
-            <button className="icon-button" onClick={() => setNotice("화상통화는 LiveKit 방 생성 후 연결됩니다.")} title="화상통화" type="button">
+            <button
+              className="icon-button"
+              data-active={Boolean(currentLiveCall)}
+              disabled={isCallAction || (!callCapabilities.available && !currentLiveCall)}
+              onClick={() => void startOrOpenCall("video")}
+              title={callCapabilities.available ? "영상 통화" : callCapabilities.reason ?? "통화 서버 설정 필요"}
+              type="button"
+            >
               <Video size={18} />
             </button>
             <button className="icon-button" onClick={popOut} title="개별 창 열기" type="button">
@@ -1567,6 +1652,14 @@ function ChatDesk({
             </button>
           </div>
         </header>
+
+        {selectedCall ? (
+          <CallDesk
+            call={selectedCall}
+            onDismiss={() => setSelectedCallId("")}
+            onUpdated={applyCallUpdate}
+          />
+        ) : null}
 
         <div className="message-list" role="log">
           {hasMoreMessages ? (

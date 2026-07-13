@@ -15,6 +15,11 @@ if (userDataOverride) {
 
 const developmentWebUrl = process.env.HAHATALK_WEB_URL || "http://127.0.0.1:3000";
 const developmentApiUrl = process.env.HAHATALK_API_URL || "http://127.0.0.1:4000";
+
+if (process.env.HAHATALK_TEST_FAKE_MEDIA === "1") {
+  app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+  app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+}
 const appUserModelId = "com.squirrel.HahaTalk.HahaTalk";
 
 const mimeTypes = {
@@ -158,13 +163,23 @@ async function findAvailablePort() {
 }
 
 function setStaticHeaders(response) {
+  const connectSources = ["'self'", "http://127.0.0.1:*", "ws://127.0.0.1:*"];
+  try {
+    const livekitUrl = new URL(process.env.LIVEKIT_URL || "");
+    if (["https:", "wss:"].includes(livekitUrl.protocol)) {
+      livekitUrl.protocol = "wss:";
+      connectSources.push(livekitUrl.origin);
+    }
+  } catch {
+    // An invalid provider URL is rejected by the API capability boundary.
+  }
   response.setHeader("Content-Security-Policy", [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: http://127.0.0.1:*",
     "font-src 'self' data:",
-    "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*",
+    `connect-src ${connectSources.join(" ")}`,
     "media-src 'self' blob: http://127.0.0.1:*",
     "worker-src 'self' blob:",
     "frame-src 'self' blob:",
