@@ -425,7 +425,7 @@ function pipeApiLogs(apiProcess) {
   });
 }
 
-async function startPackagedApi(apiEntryPath, webOrigin, databaseUrl) {
+async function startPackagedApi(apiEntryPath, webOrigin, databaseRuntime) {
   let lastError = null;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     const port = await findAvailablePort();
@@ -433,7 +433,8 @@ async function startPackagedApi(apiEntryPath, webOrigin, databaseUrl) {
     const apiProcess = utilityProcess.fork(apiEntryPath, [], {
       env: {
         ...process.env,
-        DATABASE_URL: databaseUrl,
+        DATABASE_URL: databaseRuntime.databaseUrl,
+        HAHATALK_DATABASE_MODE: databaseRuntime.managed ? "embedded-single-user" : "external",
         HAHATALK_MIGRATIONS_DIR: path.join(path.dirname(apiEntryPath), "migrations"),
         HAHATALK_OBJECT_ROOT: path.join(app.getPath("userData"), "objects"),
         NODE_ENV: "production",
@@ -474,7 +475,7 @@ async function startRuntime() {
   const databaseRuntime = await startEmbeddedPostgres(runtimeRoot);
   const staticRuntime = await startStaticServer(path.join(runtimeRoot, "web"));
   try {
-    const apiRuntime = await startPackagedApi(path.join(runtimeRoot, "api.cjs"), staticRuntime.url, databaseRuntime.databaseUrl);
+    const apiRuntime = await startPackagedApi(path.join(runtimeRoot, "api.cjs"), staticRuntime.url, databaseRuntime);
     return {
       apiProcess: apiRuntime.apiProcess,
       apiUrl: apiRuntime.apiUrl,

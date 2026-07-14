@@ -12,8 +12,10 @@ import {
   Put,
   Query,
   Req,
-  Res
+  Res,
+  UseGuards
 } from "@nestjs/common";
+import { ThrottlerGuard } from "@nestjs/throttler";
 import type { AudienceType, MemberRole, SendConversationMessageInput } from "@hahatalk/contracts";
 import {
   IsArray,
@@ -204,6 +206,7 @@ class WorkerFailDto extends WorkerLeaseDto {
 }
 
 @Controller("ai")
+@UseGuards(ThrottlerGuard)
 export class AiController {
   constructor(private readonly ai: AiService) {}
 
@@ -318,6 +321,7 @@ export class AiController {
 
 @PublicRoute()
 @Controller("internal/ai")
+@UseGuards(ThrottlerGuard)
 export class AiWorkerController {
   constructor(private readonly ai: AiService) {}
 

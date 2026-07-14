@@ -14,11 +14,23 @@ import { BroadcastsModule } from "./broadcasts/broadcasts.module.js";
 import { AiModule } from "./ai/ai.module.js";
 import { RemoteSupportModule } from "./remote-support/remote-support.module.js";
 import { MobileModule } from "./mobile/mobile.module.js";
+import { OperationsModule } from "./operations/operations.module.js";
+import { createThrottleTracker, PostgresThrottlerStorage } from "./security/postgres-throttler-storage.js";
+import { SecurityModule } from "./security/security.module.js";
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot([{ limit: 120, ttl: 60_000 }]),
     DatabaseModule,
+    SecurityModule,
+    ThrottlerModule.forRootAsync({
+      imports: [SecurityModule],
+      inject: [PostgresThrottlerStorage],
+      useFactory: (storage: PostgresThrottlerStorage) => ({
+        getTracker: createThrottleTracker,
+        storage,
+        throttlers: [{ blockDuration: 60_000, limit: 120, name: "default", ttl: 60_000 }]
+      })
+    }),
     AuthModule,
     InvitationModule,
     ContactsModule,
@@ -31,7 +43,8 @@ import { MobileModule } from "./mobile/mobile.module.js";
     BroadcastsModule,
     AiModule,
     RemoteSupportModule,
-    MobileModule
+    MobileModule,
+    OperationsModule
   ]
 })
 export class AppModule {}

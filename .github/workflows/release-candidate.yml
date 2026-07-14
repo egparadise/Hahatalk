@@ -1,0 +1,68 @@
+name: Release Candidate
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  windows-release-candidate:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Start isolated PostgreSQL
+        run: npm run infra:postgres:portable
+
+      - name: Run release quality gates
+        run: npm run release:quality
+
+      - name: Audit high and critical dependencies
+        run: npm audit --audit-level=high
+
+      - name: Build Windows candidate
+        run: npm run desktop:make
+
+      - name: Create manifest and SBOM
+        run: |
+          npm run release:manifest -- --require-desktop
+          npm run release:sbom
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hahatalk-release-candidate
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe
+            apps/desktop/out/make/squirrel.windows/x64/*.nupkg
+            apps/desktop/out/release-candidate-manifest.json
+            apps/desktop/out/release-candidate-manifest.json.sha256
+            apps/desktop/out/hahatalk-sbom.cyclonedx.json
+
+      - name: Attest public workflow-dispatch artifact
+        if: github.event_name == 'workflow_dispatch' && github.event.repository.visibility == 'public'
+        uses: actions/attest@v4
+        with:
+          subject-path: apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: npm run infra:postgres:portable:stop

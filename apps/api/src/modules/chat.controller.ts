@@ -8,8 +8,10 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Query
+  Query,
+  UseGuards
 } from "@nestjs/common";
+import { ThrottlerGuard } from "@nestjs/throttler";
 import {
   type AudienceType,
   type MemberRole,
@@ -71,6 +73,7 @@ class EditMessageDto {
 }
 
 @Controller()
+@UseGuards(ThrottlerGuard)
 export class ChatController {
   constructor(
     private readonly conversations: ConversationService,

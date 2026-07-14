@@ -20,6 +20,7 @@ async function bootstrap() {
       "X-HahaTalk-AI-Worker-Id",
       "X-HahaTalk-AI-Fencing-Token",
       "X-HahaTalk-File-Name",
+      "X-HahaTalk-Ops-Token",
       hahaTalkClientHeader
     ],
     credentials: true,
@@ -27,6 +28,9 @@ async function bootstrap() {
     origin: webOrigin
   });
   app.use(createOriginPolicy(webOrigin));
+  if (process.env.HAHATALK_TRUST_PROXY === "loopback") {
+    app.set("trust proxy", "loopback");
+  }
   app.useGlobalPipes(
     new ValidationPipe({
       forbidNonWhitelisted: false,

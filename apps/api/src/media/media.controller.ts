@@ -13,8 +13,10 @@ import {
   Put,
   Query,
   Req,
-  Res
+  Res,
+  UseGuards
 } from "@nestjs/common";
+import { ThrottlerGuard } from "@nestjs/throttler";
 import type {
   AudienceType,
   InitiateMediaUploadInput,
@@ -134,6 +136,7 @@ class AlbumItemDto {
 }
 
 @Controller("media")
+@UseGuards(ThrottlerGuard)
 export class MediaController {
   constructor(private readonly media: MediaService) {}
 

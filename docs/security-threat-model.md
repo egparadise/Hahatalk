@@ -43,7 +43,7 @@
 | Client fakes approval or approval count | Snapshot eligible approvers server-side and derive progress from immutable decisions |
 | Hidden hub approver learns roster/count | Minimal approver projection omits policy, aggregate count, approver list, and group size |
 | Uninvited user uses open signup | Production default denies arbitrary signup; only one-time bootstrap flags or invitation activation |
-| Brute-force invitation/login attempts | Route-specific Nest throttling; Redis storage required before multi-node deployment |
+| Brute-force invitation/login/message attempts | Route-specific Nest throttling with PostgreSQL-backed fixed windows that survive restart; actor/source/target trackers are one-way digests |
 | Duplicate message/upload/job | Idempotency key and unique constraint |
 | DB commit succeeds but realtime fails | Transactional outbox and retry worker |
 | Private photo becomes shared original | Separate owned asset from share grant; safe derivative and revoke |
@@ -61,6 +61,10 @@
 | Remote control uses stale approval | Session-scoped short expiry, separate control grant, target emergency stop |
 | Electron renderer reaches native control | Context isolation, narrow preload API, signed separate support agent |
 | AI output treated as fact | `ai_draft` state, review workflow, source links, retry/failure state |
+| Audit export becomes a bulk data leak | Owner/admin authorization, bounded date/count/size, pseudonymous actor/target references, recursive metadata redaction, short private-object expiry, digest check, and download audit |
+| Retention job destroys held or wrong-tenant data | Forced RLS on operations tables, canonical organization membership, dry-run preview, idempotency, scoped legal hold, second-administrator approval, deployment kill switch, and count-only results |
+| Metrics create a private-ID index | Controller/handler/method/status-class labels only; no URL IDs, user, room, message, filename, object key, provider identity, token, or transcript labels |
+| Unsigned or untested artifact is released | SHA-256 manifest/SBOM, mandatory evidence gates, explicit `pending_external`, rollout locked at zero, conditional provenance, and audited rollback |
 
 ## Mandatory Leakage Tests
 
@@ -86,3 +90,9 @@
 - Confirm LiveKit and Egress render the exact same authenticated Redis address, generated summaries contain no secret values, and smoke management/object ports bind only to loopback.
 - Confirm a real Egress worker can write an MP4 but cannot read or delete it, anonymous retrieval fails, retention matches policy, and cleanup leaves no provider room or smoke object.
 - Confirm session cookies contain `HttpOnly` and `SameSite=Strict`, API JSON contains no token, and PostgreSQL contains only a 32-byte digest.
+- Exhaust an authentication bucket, restart the API, and confirm the same digest-only bucket remains blocked without storing email/IP plaintext.
+- Export audit records containing planted body/token/participant secrets and confirm content, DB projection, metrics, and release artifacts contain none of them.
+- Compare operations API results for owner, admin, member, deleted member, and another organization; repeat direct SQL under a non-superuser/no-`BYPASSRLS` role with no context and two different organization contexts.
+- Prove an active legal hold blocks approval and execution, the requester cannot approve their own destructive job, and a released hold plus a different administrator is required.
+- Restore a custom-format PostgreSQL dump into a separate database and compare migration, organization, user, audit, release, lifecycle, and RLS-policy invariants.
+- Run bounded concurrent message/idempotency and authenticated Socket.IO reconnect tests; fail on errors, duplicates, or explicit p95 thresholds.

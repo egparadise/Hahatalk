@@ -12,6 +12,7 @@ import type { AudienceType, MemberRole, SendConversationMessageInput } from "@ha
 import { Server, Socket } from "socket.io";
 import { AuthService } from "../auth/auth.service.js";
 import type { AuthPrincipal } from "../auth/auth.types.js";
+import { PostgresThrottlerStorage } from "../security/postgres-throttler-storage.js";
 import { ConversationService } from "./conversation.service.js";
 import { RealtimeDeliveryService } from "./realtime-delivery.service.js";
 
@@ -53,7 +54,8 @@ export class ChatGateway implements OnGatewayInit {
   constructor(
     private readonly conversations: ConversationService,
     private readonly authService: AuthService,
-    private readonly realtime: RealtimeDeliveryService
+    private readonly realtime: RealtimeDeliveryService,
+    private readonly rateLimits: PostgresThrottlerStorage
   ) {}
 
   afterInit(server: Server) {
@@ -84,6 +86,7 @@ export class ChatGateway implements OnGatewayInit {
   async joinRoom(@ConnectedSocket() socket: Socket, @MessageBody() body?: JoinRoomEvent) {
     try {
       const principal = this.principal(socket);
+      await this.rateLimits.assertAllowed(principal.internalUserId, "socket_join", body?.spaceId, 40, 60_000);
       const userId = principal.state.user.id;
       const userRoom = this.realtime.userRoom(userId);
       await socket.join(userRoom);
@@ -103,6 +106,8 @@ export class ChatGateway implements OnGatewayInit {
       if (!body) {
         throw new Error("Message payload is required.");
       }
+      const principal = this.principal(socket);
+      await this.rateLimits.assertAllowed(principal.internalUserId, "socket_message", body.spaceId, 60, 60_000);
       const input: SendConversationMessageInput = {
         spaceId: body.spaceId,
         clientMessageId: body.clientMessageId,
@@ -113,7 +118,7 @@ export class ChatGateway implements OnGatewayInit {
         ...(body.parentMessageId ? { parentMessageId: body.parentMessageId } : {}),
         ...(body.requiresConfirmation !== undefined ? { requiresConfirmation: body.requiresConfirmation } : {})
       };
-      return await this.conversations.sendMessage(this.principal(socket), input);
+      return await this.conversations.sendMessage(principal, input);
     } catch (error) {
       throw this.websocketError(error);
     }
@@ -126,6 +131,7 @@ export class ChatGateway implements OnGatewayInit {
         throw new Error("Typing payload is invalid.");
       }
       const principal = this.principal(socket);
+      await this.rateLimits.assertAllowed(principal.internalUserId, "socket_typing", body.spaceId, 120, 60_000);
       const recipients = await this.conversations.typingRecipients(principal, body.spaceId, body.targetUserIds);
       const update = this.conversations.typingUpdate(principal, body.spaceId, body.active);
       for (const userId of recipients) {

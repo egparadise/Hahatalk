@@ -142,13 +142,18 @@ describe("HahaTalk conversation contracts", () => {
     );
 
     expect(memberSession.permissions.canInviteGuests).toBe(true);
+    expect(memberSession.permissions.canExportAudit).toBe(true);
+    expect(memberSession.permissions.canManageRelease).toBe(true);
     expect(memberSession.expiresAt).toBe("2026-07-09T13:00:00.000Z");
     expect(memberSession).not.toHaveProperty("token");
     expect(guestSession.permissions.canDownloadFiles).toBe(false);
     expect(guestSession.permissions.canOpenReadReport).toBe(false);
+    expect(guestSession.permissions.canManageRetention).toBe(false);
     expect(hiddenHubAdminSession.permissions.canInviteGuests).toBe(false);
     expect(hiddenHubAdminSession.permissions.canOpenReadReport).toBe(false);
     expect(hiddenHubAdminSession.permissions.canCreateBroadcast).toBe(false);
+    expect(hiddenHubAdminSession.permissions.canExportAudit).toBe(false);
+    expect(hiddenHubAdminSession.permissions.canManageRelease).toBe(false);
   });
 
   it("keeps the participant-safe MVP snapshot shape explicit", () => {

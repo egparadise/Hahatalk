@@ -5,14 +5,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: "HahaTalk",
   slug: "hahatalk",
   owner: "egparadise",
-  version: "0.17.0",
+  version: "0.18.0",
   orientation: "portrait",
   icon: "./assets/app-icon.png",
   scheme: "hahatalk",
   userInterfaceStyle: "light",
   ios: {
     bundleIdentifier: "kr.co.inviz.hahatalk",
-    buildNumber: "17",
+    buildNumber: "18",
     supportsTablet: true,
     infoPlist: {
       NSCameraUsageDescription: "HahaTalk video calls need camera access.",
@@ -23,7 +23,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: "kr.co.inviz.hahatalk",
-    versionCode: 17,
+    versionCode: 18,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#0F9F8F"

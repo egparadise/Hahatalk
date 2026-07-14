@@ -154,6 +154,8 @@ Exit: Android/iOS tests pass on real devices and capability limitations are expl
 
 Exit: release candidate passes automated, manual, security, privacy, performance, backup/restore, and user acceptance gates.
 
+Current evidence (2026-07-14): the local 0.18.0 release-candidate control plane, durable throttling, forced-RLS operations tables, redacted audit export, legal-hold lifecycle, release/rollback records, real isolated backup restore, bounded load/reconnect, manifest, SBOM, and Windows build loop are implemented. GA remains blocked by the explicitly recorded signing, physical-device, production-infrastructure, legal-policy, and real-Egress external gates.
+
 ## Standard Stage Loop
 
 ```text

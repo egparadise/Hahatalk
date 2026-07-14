@@ -67,7 +67,7 @@ export async function registerForPush(installationId: string): Promise<MobileDev
   const token = await Notifications.getExpoPushTokenAsync({ projectId: easProjectId });
   const resolved = Intl.DateTimeFormat().resolvedOptions();
   const input: RegisterMobileDeviceInput = {
-    appVersion: Application.nativeApplicationVersion ?? "0.17.0",
+    appVersion: Application.nativeApplicationVersion ?? "0.18.0",
     capabilities: { calls: true, notifications: true },
     installationId,
     locale: resolved.locale || "ko-KR",

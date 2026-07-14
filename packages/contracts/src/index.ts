@@ -756,6 +756,104 @@ export interface AuthPermissions {
   canDownloadFiles: boolean;
   canCreateBroadcast: boolean;
   canRequestRemoteSupport: boolean;
+  canExportAudit: boolean;
+  canManageRetention: boolean;
+  canManageRelease: boolean;
+}
+
+export type RetentionDataClass = "operational_transient" | "audit_export" | "message" | "media" | "ai" | "user_account";
+export type LegalHoldDataClass = RetentionDataClass | "all";
+export type LegalHoldScope = "organization" | "user" | "conversation" | "media";
+export type LifecycleJobType = "operational_cleanup" | "audit_export_expiry" | "user_deletion";
+export type ReleaseGateResult = "passed" | "failed" | "pending_external";
+export type ReleaseGateName =
+  | "authorization"
+  | "backup_restore"
+  | "contracts"
+  | "dependency_audit"
+  | "full_harness"
+  | "load_reconnect"
+  | "schema"
+  | "windows_install"
+  | "legal_policy"
+  | "media_egress"
+  | "mobile_signing"
+  | "physical_devices"
+  | "production_infrastructure"
+  | "windows_signing";
+
+export interface AuditExportView {
+  id: string;
+  status: "queued" | "processing" | "completed" | "failed" | "expired";
+  fromAt: string;
+  toAt: string;
+  actionPrefix: string | null;
+  recordCount: number | null;
+  sizeBytes: number | null;
+  contentSha256: string | null;
+  downloadAvailable: boolean;
+  failureCode: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface RetentionPolicyView {
+  dataClass: RetentionDataClass;
+  retainDays: number;
+  enabled: boolean;
+  version: number;
+  updatedAt: string;
+}
+
+export interface LegalHoldView {
+  id: string;
+  scopeType: LegalHoldScope;
+  scopeId: string | null;
+  dataClass: LegalHoldDataClass;
+  reasonCode: string;
+  status: "active" | "released";
+  createdAt: string;
+  releasedAt: string | null;
+}
+
+export interface LifecycleJobView {
+  id: string;
+  jobType: LifecycleJobType;
+  dataClass: "operational_transient" | "audit_export" | "user_account";
+  targetUserId: string | null;
+  dryRun: boolean;
+  status: "requested" | "approved" | "running" | "completed" | "blocked" | "failed" | "cancelled";
+  preview: Record<string, unknown>;
+  result: Record<string, unknown>;
+  legalHoldId: string | null;
+  failureCode: string | null;
+  cutoffAt: string | null;
+  createdAt: string;
+  approvedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface ReleaseGateView {
+  name: ReleaseGateName;
+  result: ReleaseGateResult | "missing";
+  evidenceSha256: string | null;
+  detailCode: string;
+  checkedAt: string | null;
+}
+
+export interface ReleaseCandidateView {
+  id: string;
+  version: string;
+  gitSha: string;
+  schemaVersion: string;
+  manifestSha256: string;
+  artifactSha256: string | null;
+  status: "draft" | "candidate" | "approved" | "rejected" | "rolled_back";
+  rolloutPercent: number;
+  gates: ReleaseGateView[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AuthSession {
@@ -1511,7 +1609,10 @@ export function createAuthSession(
       canOpenReadReport: canManageConversation,
       canDownloadFiles: !isGuest,
       canCreateBroadcast: canManageConversation,
-      canRequestRemoteSupport: !isGuest
+      canRequestRemoteSupport: !isGuest,
+      canExportAudit: canManageConversation,
+      canManageRetention: canManageConversation,
+      canManageRelease: role === "owner" && !isHiddenHubParticipant
     },
     createdAt,
     expiresAt: expiresAt.toISOString()

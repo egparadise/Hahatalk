@@ -44,6 +44,10 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Consent-bound Windows remote support with exact requester/target roles, expiring activation credentials, monotonic command fencing, pause/revoke/emergency stop, and an unsigned-agent dry-run boundary that cannot inject native input.
 - Expo SDK 57 Android/iOS companion with protected routes, SecureStore sessions, AES-256-GCM offline replies, Smart Room viewer-safe chat, media viewing/sharing, calendar RSVP, broadcast viewing, and LiveKit call participation.
 - Rotating mobile refresh tokens, bearer-authenticated Socket.IO, encrypted push tokens, generic no-content message/call/meeting/broadcast jobs, lease/retry delivery, and logout/device revocation cleanup.
+- PostgreSQL-backed restart-safe HTTP/Socket.IO abuse limits, schema-aware readiness, and privacy-safe low-cardinality Prometheus metrics.
+- Pseudonymous redacted audit export, versioned retention policy, scoped legal hold, dry-run and second-administrator lifecycle approval, single-active expiry execution, and fail-closed single-organization account anonymization.
+- Organization-isolated Stage 11 operations tables with forced RLS plus differential tests using a non-superuser/no-bypass database role.
+- Release-candidate gate evidence, staged rollout fencing, rollback, real PostgreSQL backup/restore verification, bounded load/reconnect checks, release manifest, and CycloneDX SBOM.
 
 ## Commands
 
@@ -81,6 +85,12 @@ npm run mobile:check
 npm run mobile:integration
 npm run mobile:export
 npm run mobile:bundle-check
+npm run release:artifact-check
+npm run release:integration
+npm run release:load
+npm run release:quality
+npm run release:manifest -- --require-desktop
+npm run release:sbom
 npm run media-infra:check
 # Requires a healthy Docker Linux engine and performs a real Room Composite MP4 test:
 npm run media-infra:smoke
@@ -101,6 +111,8 @@ The web MVP runs at `http://127.0.0.1:3000`. The API fails closed when PostgreSQ
 The Windows installer is generated at `apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe`. It is currently unsigned and intended for local development validation until a Windows code-signing certificate is configured.
 
 The mobile Hermes exports are generated under `apps/mobile/dist/android` and `apps/mobile/dist/ios`. APK/IPA signing, APNs/FCM delivery, and physical-device camera/microphone validation remain external release gates that require a real EAS project and store credentials; mobile remote control and screen publishing remain disabled.
+
+Stage 11 produces a release-candidate manifest and SBOM under `apps/desktop/out`. Public production rollout remains blocked until Windows/mobile signing, physical-device evidence, production DNS/TLS/TURN/storage/monitoring, legal retention approval, and the real Egress MP4 gate are recorded as passed. The repository workflow may create GitHub provenance only on an eligible public `workflow_dispatch`; a skipped attestation is never treated as a pass.
 
 ## Project Operations
 
@@ -145,4 +157,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-8-ai-voice-workbench.md`: Stage 8 durable jobs, worker leases, STT review, scoped summaries, Korean TTS, consented voice/avatar processing, and installed-renderer verification contract.
 - `docs/stage-9-consented-remote-support.md`: Stage 9 attended support consent, command fencing, isolated agent process, emergency stop, and signed-native release gate.
 - `docs/stage-10-mobile-companion.md`: Stage 10 mobile auth, encrypted offline queue, generic push, Expo routes, media/calendar/broadcast/call surfaces, and native release gates.
+- `docs/stage-11-hardening-release.md`: Stage 11 durable abuse control, RLS, audit export, lifecycle policy, backup/restore, telemetry, load, release evidence, and rollback contract.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.
