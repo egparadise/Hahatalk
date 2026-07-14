@@ -48,6 +48,14 @@ const requiredTables = [
   "call_recordings",
   "call_recording_participants",
   "broadcast_channels",
+  "channel_subscriptions",
+  "broadcast_sessions",
+  "broadcast_messages",
+  "broadcast_reactions",
+  "broadcast_moderation_actions",
+  "broadcast_replays",
+  "broadcast_private_handoffs",
+  "broadcast_events",
   "avatar_profiles",
   "ai_model_configs",
   "ai_jobs",
@@ -111,6 +119,9 @@ const requiredFragments = [
   "call_recordings_provider_recovery_idx",
   "consent_snapshot_json",
   "room_composite",
+  "session_kind in ('ad_hoc', 'scheduled_meeting', 'broadcast')",
+  "broadcast_sessions_one_live_channel_idx",
+  "broadcast_messages_moderation_queue_idx",
 ];
 
 for (const fragment of requiredFragments) {
@@ -142,6 +153,7 @@ const governanceFiles = [
   "apps/api/migrations/008_scheduled_meeting_lobby.sql",
   "apps/api/migrations/009_screen_share_device_background.sql",
   "apps/api/migrations/010_recording_consent_egress.sql",
+  "apps/api/migrations/011_personal_broadcast.sql",
   "docs/stage-6f-trusted-media-infrastructure.md",
   "infra/media/README.md",
   "infra/media/compose.smoke.yaml",

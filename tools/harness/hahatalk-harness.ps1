@@ -18,6 +18,7 @@ $required = @(
   "docs/mvp-architecture.md",
   "packages/contracts/src/index.ts",
   "apps/web/components/work-desk.tsx",
+  "apps/web/components/broadcast-desk.tsx",
   "apps/api/src/main.ts",
   "apps/desktop/main.cjs"
 )
@@ -73,6 +74,7 @@ Invoke-CheckedCommand -Command @("npm", "run", "calendar:integration")
 if ($env:OS -eq "Windows_NT") {
   Invoke-CheckedCommand -Command @("npm", "run", "infra:livekit:portable")
   Invoke-CheckedCommand -Command @("npm", "run", "recording:integration")
+  Invoke-CheckedCommand -Command @("npm", "run", "broadcasts:integration")
 }
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
 

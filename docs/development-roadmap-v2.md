@@ -101,13 +101,15 @@ Stage 6F exit evidence: the configuration harness renders smoke and synthetic pr
 
 ## Stage 7 - Personal Broadcast
 
-1. Channel profile and subscription.
-2. Scheduled/live/replay sessions.
-3. Host, cohost, speaker, viewer roles.
-4. Moderated chat, Q&A, reactions, and private-service handoff.
-5. Recording, replay assets, and analytics.
+1. Channel profile and subscription. Complete for Windows/web.
+2. Scheduled/live/replay state. Scheduled/live/ended lifecycle is complete; replay fails closed until the Stage 6F trusted-Egress gate is available.
+3. Host, cohost, speaker, viewer roles. Complete with live provider grants and hidden subscribe-only viewers.
+4. Moderated chat, Q&A, reactions, and private-service handoff. Complete.
+5. Recording, replay assets, and advanced analytics. Durable intent/status boundary is complete; real assets and advanced analytics remain deployment/product follow-up work.
 
-Exit: viewers cannot publish or see private service chats; host can moderate and end immediately.
+Exit: viewers cannot publish or see other viewers/private service chats; host can moderate, promote/demote, remove/block, and end immediately. Complete for the Windows/web control plane and installed Electron renderer.
+
+Stage 7 exit evidence: fresh PostgreSQL plus the pinned official LiveKit server proves channel/subscription separation, unlisted access, idempotency, hidden least-privilege tokens, moderated anonymous questions, reactions, handoff, block, restart, audit/outbox, and replay fail-closed behavior. The installed `0.14.0` Electron renderer proves hidden viewing, real-time Q&A, live permission promotion/demotion with camera track publication/revoke, layout integrity, provider cleanup, and embedded-PostgreSQL shutdown.
 
 ## Stage 8 - AI Voice, Summary, And Avatar
 
@@ -164,5 +166,5 @@ Primary-source research
  -> Obsidian report + learning page
  -> focused commit
  -> push
- -> user approval for the stage
+ -> continue to the next planned stage unless an external gate or product decision blocks progress
 ```

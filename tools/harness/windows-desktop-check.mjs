@@ -63,6 +63,7 @@ if (requireRuntime) {
     path.join(desktopRoot, "runtime", "migrations", "007_livekit_call_core.sql"),
     path.join(desktopRoot, "runtime", "migrations", "008_scheduled_meeting_lobby.sql"),
     path.join(desktopRoot, "runtime", "migrations", "009_screen_share_device_background.sql"),
+    path.join(desktopRoot, "runtime", "migrations", "011_personal_broadcast.sql"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "initdb.exe"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "pg_ctl.exe"),
     path.join(desktopRoot, "runtime", "postgres", "server_license.txt"),

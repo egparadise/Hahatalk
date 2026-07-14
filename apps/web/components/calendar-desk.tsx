@@ -15,6 +15,7 @@ import {
   MessageCircle,
   PanelRightOpen,
   Plus,
+  Radio,
   RefreshCw,
   RotateCcw,
   Save,
@@ -49,6 +50,7 @@ type CalendarDeskProps = {
   authSession: AuthSession;
   currentUser: User;
   onLogout: () => void;
+  onOpenBroadcast: () => void;
   onOpenChat: () => void;
   onOpenContacts: () => void;
 };
@@ -96,7 +98,7 @@ const reminderOptions = [
   { label: "하루 전", value: 1_440 }
 ];
 
-export function CalendarDesk({ authSession, currentUser, onLogout, onOpenChat, onOpenContacts }: CalendarDeskProps) {
+export function CalendarDesk({ authSession, currentUser, onLogout, onOpenBroadcast, onOpenChat, onOpenContacts }: CalendarDeskProps) {
   const initialToday = localDate(new Date(), "Asia/Seoul");
   const [context, setContext] = useState<CalendarContext | null>(null);
   const [windowView, setWindowView] = useState<CalendarWindowView>({
@@ -483,6 +485,7 @@ export function CalendarDesk({ authSession, currentUser, onLogout, onOpenChat, o
           <button className="rail-button" onClick={onOpenChat} title="채팅" type="button"><MessageCircle size={21} /></button>
           <button className="rail-button" onClick={onOpenContacts} title="사람" type="button"><Users size={21} /></button>
           <button className="rail-button" data-active="true" title="일정" type="button"><CalendarDays size={21} /></button>
+          <button className="rail-button" onClick={onOpenBroadcast} title="방송" type="button"><Radio size={21} /></button>
           <button className="rail-button" title="파일" type="button"><FolderOpen size={21} /></button>
         </div>
         <img className="avatar" alt="" src={currentUser.character.thumbnailUrl} />

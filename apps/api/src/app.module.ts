@@ -10,6 +10,7 @@ import { CalendarModule } from "./calendar/calendar.module.js";
 import { CallsModule } from "./calls/calls.module.js";
 import { MeetingsModule } from "./meetings/meetings.module.js";
 import { RecordingsModule } from "./recordings/recordings.module.js";
+import { BroadcastsModule } from "./broadcasts/broadcasts.module.js";
 
 @Module({
   imports: [
@@ -23,7 +24,8 @@ import { RecordingsModule } from "./recordings/recordings.module.js";
     CalendarModule,
     RecordingsModule,
     CallsModule,
-    MeetingsModule
+    MeetingsModule,
+    BroadcastsModule
   ]
 })
 export class AppModule {}

@@ -12,6 +12,7 @@ import {
   MessageCircle,
   PanelRightOpen,
   Plus,
+  Radio,
   RefreshCw,
   Save,
   ShieldCheck,
@@ -40,6 +41,7 @@ type ContactsDeskProps = {
   authSession: AuthSession;
   currentUser: User;
   onLogout: () => void;
+  onOpenBroadcast: () => void;
   onOpenCalendar: () => void;
   onOpenChat: () => void;
 };
@@ -59,7 +61,7 @@ const consentLabels: Record<"pending" | ContactConsentDecision, string> = {
   revoked: "철회"
 };
 
-export function ContactsDesk({ authSession, currentUser, onLogout, onOpenCalendar, onOpenChat }: ContactsDeskProps) {
+export function ContactsDesk({ authSession, currentUser, onLogout, onOpenBroadcast, onOpenCalendar, onOpenChat }: ContactsDeskProps) {
   const [dashboard, setDashboard] = useState<ContactsDashboard | null>(null);
   const [selection, setSelection] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -206,6 +208,9 @@ export function ContactsDesk({ authSession, currentUser, onLogout, onOpenCalenda
           </button>
           <button className="rail-button" onClick={onOpenCalendar} title="일정" type="button">
             <CalendarDays size={21} />
+          </button>
+          <button className="rail-button" onClick={onOpenBroadcast} title="방송" type="button">
+            <Radio size={21} />
           </button>
           <button className="rail-button" title="파일" type="button">
             <FolderOpen size={21} />

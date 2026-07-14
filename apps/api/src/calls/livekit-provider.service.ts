@@ -70,7 +70,8 @@ export class LiveKitProviderService {
     identity: string,
     canPublishAudio: boolean,
     canPublishVideo: boolean,
-    canShareScreen = false
+    canShareScreen = false,
+    hidden = false
   ) {
     const { client } = this.client();
     const sources = [
@@ -84,7 +85,8 @@ export class LiveKitProviderService {
         canPublishData: false,
         canPublishSources: sources,
         canSubscribe: true,
-        canUpdateMetadata: false
+        canUpdateMetadata: false,
+        hidden
       }
     });
   }
@@ -95,6 +97,7 @@ export class LiveKitProviderService {
     canPublishAudio?: boolean;
     canPublishVideo?: boolean;
     displayName: string;
+    hidden?: boolean;
     identity: string;
     roomName: string;
   }) {
@@ -117,6 +120,7 @@ export class LiveKitProviderService {
       ...(sources.length ? { canPublishSources: sources } : {}),
       canSubscribe: true,
       canUpdateOwnMetadata: false,
+      hidden: input.hidden === true,
       room: input.roomName,
       roomJoin: true
     });

@@ -24,6 +24,7 @@ import {
   Pencil,
   Phone,
   Plus,
+  Radio,
   Reply,
   RefreshCw,
   Search,
@@ -89,6 +90,7 @@ import { CalendarDesk } from "./calendar-desk";
 import { MediaPanel, type MediaUploadTaskView } from "./media-panel";
 import { PdfViewer } from "./pdf-viewer";
 import { CallDesk } from "./call-desk";
+import { BroadcastDesk } from "./broadcast-desk";
 
 type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
 type ReadReportRow = ReturnType<typeof buildReadReport>[number];
@@ -108,10 +110,10 @@ export function WorkDesk() {
   const [password, setPassword] = useState("");
   const [selectedCharacterId, setSelectedCharacterId] = useState(characterPresets[0]?.id ?? "");
   const [initialInviteCode, setInitialInviteCode] = useState("");
-  const [deskMode, setDeskMode] = useState<"chat" | "contacts" | "calendar">(() => {
+  const [deskMode, setDeskMode] = useState<"chat" | "contacts" | "calendar" | "broadcast">(() => {
     if (typeof window === "undefined") return "chat";
     const requested = new URLSearchParams(window.location.search).get("desk");
-    return requested === "contacts" || requested === "calendar" ? requested : "chat";
+    return requested === "contacts" || requested === "calendar" || requested === "broadcast" ? requested : "chat";
   });
   const selectedCharacter = characterPresets.find((character) => character.id === selectedCharacterId) ?? characterPresets[0]!;
 
@@ -229,21 +231,42 @@ export function WorkDesk() {
     );
   }
 
+  function openDesk(mode: "chat" | "contacts" | "calendar" | "broadcast", spaceId?: string) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("desk", mode);
+    if (spaceId) url.searchParams.set("space", spaceId);
+    else if (mode !== "chat") url.searchParams.delete("space");
+    window.history.replaceState(null, "", url);
+    setDeskMode(mode);
+  }
+
   return deskMode === "contacts" ? (
     <ContactsDesk
       authSession={authSession}
       currentUser={currentUser}
       onLogout={logout}
-      onOpenCalendar={() => setDeskMode("calendar")}
-      onOpenChat={() => setDeskMode("chat")}
+      onOpenBroadcast={() => openDesk("broadcast")}
+      onOpenCalendar={() => openDesk("calendar")}
+      onOpenChat={() => openDesk("chat")}
     />
   ) : deskMode === "calendar" ? (
     <CalendarDesk
       authSession={authSession}
       currentUser={currentUser}
       onLogout={logout}
-      onOpenChat={() => setDeskMode("chat")}
-      onOpenContacts={() => setDeskMode("contacts")}
+      onOpenBroadcast={() => openDesk("broadcast")}
+      onOpenChat={() => openDesk("chat")}
+      onOpenContacts={() => openDesk("contacts")}
+    />
+  ) : deskMode === "broadcast" ? (
+    <BroadcastDesk
+      authSession={authSession}
+      currentUser={currentUser}
+      onLogout={logout}
+      onOpenCalendar={() => openDesk("calendar")}
+      onOpenChat={() => openDesk("chat")}
+      onOpenChatSpace={(spaceId) => openDesk("chat", spaceId)}
+      onOpenContacts={() => openDesk("contacts")}
     />
   ) : (
     <ChatDesk
@@ -251,8 +274,9 @@ export function WorkDesk() {
       currentUser={currentUser}
       initialInviteCode={initialInviteCode}
       onLogout={logout}
-      onOpenCalendar={() => setDeskMode("calendar")}
-      onOpenContacts={() => setDeskMode("contacts")}
+      onOpenBroadcast={() => openDesk("broadcast")}
+      onOpenCalendar={() => openDesk("calendar")}
+      onOpenContacts={() => openDesk("contacts")}
       users={users}
     />
   );
@@ -610,6 +634,7 @@ function ChatDesk({
   currentUser,
   initialInviteCode,
   onLogout,
+  onOpenBroadcast,
   onOpenCalendar,
   onOpenContacts,
   users
@@ -618,6 +643,7 @@ function ChatDesk({
   currentUser: User;
   initialInviteCode: string;
   onLogout: () => void;
+  onOpenBroadcast: () => void;
   onOpenCalendar: () => void;
   onOpenContacts: () => void;
   users: User[];
@@ -628,7 +654,10 @@ function ChatDesk({
     roomId: authSession.roomId
   };
   const initialVisibleMemberIds = new Set(initialRoomPresentation.visibleMemberIds);
-  const [activeSpaceId, setActiveSpaceId] = useState(authSession.roomId);
+  const [activeSpaceId, setActiveSpaceId] = useState(() => {
+    if (typeof window === "undefined") return authSession.roomId;
+    return new URLSearchParams(window.location.search).get("space") ?? authSession.roomId;
+  });
   const [spaces, setSpaces] = useState<ConversationListItem[]>([]);
   const [roomPresentation, setRoomPresentation] = useState<RoomPresentation>(initialRoomPresentation);
   const [roomUsers, setRoomUsers] = useState<User[]>(users.filter((user) => initialVisibleMemberIds.has(user.id)));
@@ -1540,6 +1569,9 @@ function ChatDesk({
           </button>
           <button className="rail-button" onClick={onOpenCalendar} title="일정" type="button">
             <CalendarDays size={21} />
+          </button>
+          <button className="rail-button" onClick={onOpenBroadcast} title="방송" type="button">
+            <Radio size={21} />
           </button>
           <button className="rail-button" title="파일" type="button">
             <FolderOpen size={21} />

@@ -59,6 +59,7 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Calendar-bound scheduled meetings with exact occurrence snapshots, moderated waiting rooms, role-scoped LiveKit tokens, and live participant permission updates.
 - Explicit one-at-a-time screen-share grants, source-separated screen/camera stages, in-session device switching, and on-device MediaPipe background blur/image processing.
 - Stage 6F manifest validation for trusted signaling/TURN, shared Redis, Egress health/capacity settings, upload-only recording writes, private-object checks, and bounded retention.
+- PostgreSQL-backed broadcast channels and subscriptions, hidden subscribe-only LiveKit viewers, live stage-role updates, moderated Q&A/reactions, private-chat handoff, and a replay state that fails closed without trusted Egress.
 - Repo-local AGENTS, Skill, Agents, Hooks, schema validation, and harness loop.
 
 ## Production Boundaries Still Required
@@ -68,6 +69,7 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Add Redis presence without exposing hub participants to one another.
 - Add the managed S3 adapter, production ClamAV service, retention policy, OCR/Office conversion, and video/audio derivative workers.
 - Deploy the Stage 6F manifest on real central infrastructure with trusted DNS/certificates, TURN/TLS, firewall rules, secret-manager injection, monitoring, backup/restore, and rollback. Stages 6B-6F provide the media control plane and a strict real-MP4 smoke, but local loopback Compose is verification infrastructure rather than production. E2EE key distribution and a production-environment smoke remain deployment work.
+- Keep broadcast replay unavailable until the same trusted Egress and protected object-storage gate produces and verifies a real asset; renderer-local recording is not a replay substitute.
 - Add AI worker services; chat must never await them.
 - Add a support-agent security review before remote control code is enabled.
 

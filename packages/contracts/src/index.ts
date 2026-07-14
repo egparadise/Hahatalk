@@ -84,6 +84,18 @@ export type MeetingParticipantStatus =
   | "left"
   | "removed"
   | "missed";
+export type BroadcastChannelVisibility = "organization" | "unlisted";
+export type BroadcastSubscriptionStatus = "active" | "muted" | "blocked" | "left";
+export type BroadcastNotificationLevel = "all" | "live_only" | "off";
+export type BroadcastChatMode = "disabled" | "subscribers" | "moderated";
+export type BroadcastStatus = "scheduled" | "starting" | "live" | "ended" | "cancelled" | "failed";
+export type BroadcastRole = "host" | "cohost" | "speaker" | "viewer";
+export type BroadcastParticipantStatus = "not_joined" | "connecting" | "joined" | "left" | "removed";
+export type BroadcastMessageKind = "chat" | "question" | "announcement";
+export type BroadcastMessageStatus = "pending" | "published" | "hidden" | "dismissed" | "deleted";
+export type BroadcastModerationAction = "publish" | "hide" | "restore" | "dismiss";
+export type BroadcastReaction = "like" | "applause" | "thanks" | "question" | "celebrate";
+export type BroadcastReplayStatus = "not_requested" | "processing" | "ready" | "failed" | "unavailable";
 
 export interface Organization {
   id: string;
@@ -827,6 +839,166 @@ export interface MeetingJoinView {
   serverUrl: string;
   token: string;
   tokenExpiresAt: string;
+}
+
+export interface BroadcastChannelSummary {
+  id: string;
+  handle: string;
+  name: string;
+  description: string;
+  visibility: BroadcastChannelVisibility;
+  owner: Pick<User, "id" | "displayName" | "character">;
+  isOwner: boolean;
+  isSubscribed: boolean;
+  subscriberCount: number;
+  canManage: boolean;
+  canSubscribe: boolean;
+  subscriptionStatus?: BroadcastSubscriptionStatus;
+  notificationLevel?: BroadcastNotificationLevel;
+  nextSession?: BroadcastSessionSummary;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BroadcastSessionSummary {
+  id: string;
+  channelId: string;
+  title: string;
+  description: string;
+  callType: CallType;
+  chatMode: BroadcastChatMode;
+  status: BroadcastStatus;
+  scheduledFor: string;
+  expectedEndAt: string;
+  viewerCount: number;
+  replayStatus: BroadcastReplayStatus;
+  startedAt?: string;
+  endedAt?: string;
+}
+
+export interface BroadcastParticipantView {
+  person: Pick<User, "id" | "displayName" | "character">;
+  role: BroadcastRole;
+  status: BroadcastParticipantStatus;
+  isSelf: boolean;
+  canPublishAudio: boolean;
+  canPublishVideo: boolean;
+  joinedAt?: string;
+  leftAt?: string;
+}
+
+export interface BroadcastMessageView {
+  id: string;
+  kind: BroadcastMessageKind;
+  status: BroadcastMessageStatus;
+  body: string;
+  senderLabel: string;
+  senderRole: BroadcastRole;
+  isMine: boolean;
+  canModerate: boolean;
+  version: number;
+  sender?: Pick<User, "id" | "displayName" | "character">;
+  moderatedAt?: string;
+  createdAt: string;
+}
+
+export interface BroadcastReactionCount {
+  reaction: BroadcastReaction;
+  count: number;
+}
+
+export interface BroadcastReplayView {
+  status: BroadcastReplayStatus;
+  canOpen: boolean;
+  unavailableReason?: string;
+  mediaAssetId?: string;
+  availableAt?: string;
+}
+
+export interface BroadcastSessionView extends BroadcastSessionSummary {
+  channel: BroadcastChannelSummary;
+  version: number;
+  myRole: BroadcastRole;
+  myStatus: BroadcastParticipantStatus;
+  canStart: boolean;
+  canJoin: boolean;
+  canLeave: boolean;
+  canEnd: boolean;
+  canModerate: boolean;
+  canManageRoles: boolean;
+  canSendChat: boolean;
+  canAskQuestion: boolean;
+  canRequestPrivateService: boolean;
+  onStageParticipants: BroadcastParticipantView[];
+  moderationParticipants?: BroadcastParticipantView[];
+  messages: BroadcastMessageView[];
+  reactionCounts: BroadcastReactionCount[];
+  replay: BroadcastReplayView;
+  endReason?: string;
+}
+
+export interface BroadcastDashboard {
+  capabilities: CallCapabilities;
+  canCreateChannel: boolean;
+  channels: BroadcastChannelSummary[];
+}
+
+export interface BroadcastJoinView {
+  broadcast: BroadcastSessionView;
+  serverUrl: string;
+  token: string;
+  tokenExpiresAt: string;
+}
+
+export interface CreateBroadcastChannelInput {
+  handle: string;
+  name: string;
+  description?: string;
+  visibility: BroadcastChannelVisibility;
+}
+
+export interface ScheduleBroadcastInput {
+  clientSessionId: string;
+  title: string;
+  description?: string;
+  callType: CallType;
+  chatMode: BroadcastChatMode;
+  scheduledFor: string;
+  expectedEndAt: string;
+  viewerLimit: number;
+  replayRequested: boolean;
+}
+
+export interface BroadcastSubscriptionInput {
+  notificationLevel: BroadcastNotificationLevel;
+}
+
+export interface CreateBroadcastMessageInput {
+  clientMessageId: string;
+  kind: BroadcastMessageKind;
+  body: string;
+}
+
+export interface ModerateBroadcastMessageInput {
+  action: BroadcastModerationAction;
+  version: number;
+}
+
+export interface SendBroadcastReactionInput {
+  clientReactionId: string;
+  reaction: BroadcastReaction;
+}
+
+export interface ChangeBroadcastRoleInput {
+  role: Exclude<BroadcastRole, "host">;
+  version: number;
+}
+
+export interface BroadcastPrivateHandoffView {
+  channelId: string;
+  spaceId: string;
+  owner: Pick<User, "id" | "displayName" | "character">;
+  created: boolean;
 }
 
 export interface StopScreenShareInput {

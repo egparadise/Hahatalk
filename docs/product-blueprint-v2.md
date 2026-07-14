@@ -27,7 +27,7 @@ Every participant sees only a normal 1:1 chat with the owner. They do not see a 
 
 ### Personal Broadcast
 
-A creator can schedule or start a LiveKit-backed video/audio broadcast. Subscribers see a feed, live room, moderated chat, replay, and related files. Broadcast membership is separate from chat-room membership.
+A creator can schedule or start a LiveKit-backed video/audio broadcast. Subscribers see a channel, live room, moderated chat, aggregate reactions, and a replay only after trusted Egress succeeds. Broadcast membership is separate from chat-room membership. Viewers are hidden subscribe-only media participants and never see one another; only host/cohost/speaker identities are public on stage. A viewer can request a private service handoff, which creates or reuses a separate 1:1 conversation rather than leaking that exchange into the broadcast.
 
 ## Identity, Family, And Managed Groups
 
