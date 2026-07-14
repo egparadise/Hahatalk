@@ -141,7 +141,17 @@ const governanceFiles = [
   "apps/api/migrations/007_livekit_call_core.sql",
   "apps/api/migrations/008_scheduled_meeting_lobby.sql",
   "apps/api/migrations/009_screen_share_device_background.sql",
-  "apps/api/migrations/010_recording_consent_egress.sql"
+  "apps/api/migrations/010_recording_consent_egress.sql",
+  "docs/stage-6f-trusted-media-infrastructure.md",
+  "infra/media/README.md",
+  "infra/media/compose.smoke.yaml",
+  "infra/media/deployment.production.example.json",
+  "infra/media/deployment.smoke.json",
+  "infra/media/provision-minio.sh",
+  "tools/infra/media-deployment-lib.mjs",
+  "tools/infra/render-media-deployment.mjs",
+  "tools/harness/media-egress-smoke.mjs",
+  "tools/harness/media-infrastructure-config.mjs"
 ];
 
 for (const file of governanceFiles) {

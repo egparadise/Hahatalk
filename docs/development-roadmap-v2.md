@@ -85,6 +85,7 @@ Exit: fresh-DB and installed-Windows tests prove chat independence, resumable in
 3. Scheduled meeting lobby and participant roles. Complete for Windows in Stage 6C.
 4. Screen sharing, device controls, background blur/image. Complete for Windows in Stage 6D.
 5. Recording consent and Egress lifecycle. Complete for the Windows/web control plane in Stage 6E; real self-hosted Egress and protected-object deployment smoke remains an infrastructure gate.
+6. Trusted central media deployment manifests, shared authenticated Redis, isolated Egress, private upload-only recording storage, retention, and a strict real-MP4 smoke. Configuration and fail-closed validation are complete in Stage 6F; the real-MP4 run remains pending until the local Docker Linux engine is healthy or a production-equivalent worker is supplied.
 
 Exit: web, Windows desktop, Android, and iOS capability matrix is tested; unsupported controls are hidden rather than simulated.
 
@@ -95,6 +96,8 @@ Stage 6C exit evidence: fresh PostgreSQL plus the real provider proves canonical
 Stage 6D exit evidence: immutable migration and fresh-DB tests prove explicit screen-share grants, one active sharer, role boundaries, rollback, audit, and terminal cleanup. Installed Electron renderers prove local device selection, packaged MediaPipe background blur, real screen-track publication/stop, concurrent denial, and immediate role-demotion revocation without persisting device IDs or background images.
 
 Stage 6E exit evidence: fresh-DB call/meeting tests prove exact joined-participant snapshots, exact-policy unanimous consent, denial/re-request, cohost control, immediate participant revoke, late-join blocking, signed webhook enforcement, provider-secret exclusion, restart reconciliation, and fail-closed room shutdown. The Windows/web UI exposes a continuous recording state and per-person consent controls. A production Egress worker and protected S3-compatible bucket are required before real MP4 output is approved.
+
+Stage 6F exit evidence: the configuration harness renders smoke and synthetic production manifests, proves trusted `wss`/TURN requirements, exact shared Redis credentials, pinned worker images, loopback-only smoke exposure, secret redaction, an upload-only recording prefix, and lifecycle retention. `npm run media-infra:smoke` is a mandatory non-skippable deployment gate that must create, inspect, deny anonymous/Egress reads of, and remove a real MP4. On 2026-07-14 that runtime gate remained blocked because Docker Desktop could not start its Linux engine after a Windows/WSL upgrade; this is recorded as an infrastructure failure, never a passing test.
 
 ## Stage 7 - Personal Broadcast
 

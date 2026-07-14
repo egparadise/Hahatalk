@@ -11,6 +11,7 @@
 - Redis: presence, rate limits, queues, and Socket.IO scale-out.
 - Object storage provider: the packaged Windows baseline uses a private per-user filesystem root; managed deployments will use the same contract with S3-compatible storage. The pinned MinIO image is local-development-only.
 - LiveKit: voice, video, screen sharing, webinar, and broadcast media.
+- Central media deployment: trusted LiveKit signaling/TURN, one authenticated Redis boundary shared with separately isolated Egress workers, and private S3-compatible recording storage. Generated credentials stay outside Git and desktop packages.
 - Python workers: Whisper-compatible STT, Qwen 3.5+ assistant jobs, Qwen3-TTS, summaries, and avatar processing.
 - Remote support control plane: HahaTalk consent/audit orchestration with a separately sandboxed Windows support agent.
 
@@ -57,6 +58,7 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Authenticated PDF.js/image/video/audio/text previews, durable PC capture, and independent document/media windows.
 - Calendar-bound scheduled meetings with exact occurrence snapshots, moderated waiting rooms, role-scoped LiveKit tokens, and live participant permission updates.
 - Explicit one-at-a-time screen-share grants, source-separated screen/camera stages, in-session device switching, and on-device MediaPipe background blur/image processing.
+- Stage 6F manifest validation for trusted signaling/TURN, shared Redis, Egress health/capacity settings, upload-only recording writes, private-object checks, and bounded retention.
 - Repo-local AGENTS, Skill, Agents, Hooks, schema validation, and harness loop.
 
 ## Production Boundaries Still Required
@@ -65,7 +67,7 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Move the single-process outbox publisher to a leased multi-replica worker before horizontal API scaling.
 - Add Redis presence without exposing hub participants to one another.
 - Add the managed S3 adapter, production ClamAV service, retention policy, OCR/Office conversion, and video/audio derivative workers.
-- Deploy trusted LiveKit `wss`, TURN/TLS, Redis-connected Egress, and protected S3-compatible storage. Stages 6B-6E provide short-lived call/meeting tokens, durable state, lobby admission, role permissions, explicit video-only screen sharing, unanimous recording consent, signed webhook reconciliation, and fail-closed stop handling. E2EE key policy and a real production Egress/storage smoke test remain deployment work.
+- Deploy the Stage 6F manifest on real central infrastructure with trusted DNS/certificates, TURN/TLS, firewall rules, secret-manager injection, monitoring, backup/restore, and rollback. Stages 6B-6F provide the media control plane and a strict real-MP4 smoke, but local loopback Compose is verification infrastructure rather than production. E2EE key distribution and a production-environment smoke remain deployment work.
 - Add AI worker services; chat must never await them.
 - Add a support-agent security review before remote control code is enabled.
 

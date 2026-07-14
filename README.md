@@ -27,6 +27,7 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Explicit one-at-a-time screen sharing with a visible shared-screen stage, scheduled-meeting role checks, immediate stop/revoke, and audit history.
 - Active-call camera/microphone/speaker selection plus locally packaged MediaPipe background blur or a temporary user-selected image; device IDs and background images are not persisted.
 - Unanimous, policy-versioned call/meeting recording consent with host/cohost start, participant revoke, visible `REC` state, LiveKit Room Composite Egress, protected MP4 metadata, signed webhooks, and fail-closed stop uncertainty.
+- Validated central-media deployment manifests for trusted LiveKit/TURN, shared authenticated Redis, isolated Egress, private S3-compatible recording storage, upload-only worker credentials, and bounded retention.
 - Hidden-hub calls remain owner-to-one-spoke in Stage 6B so no other spoke identity can appear in a provider room; open groups support exact multi-user call snapshots.
 - Internal and guest invite affordances with guest-safe permission labels.
 - Authenticated PDF.js, image, video, audio, and text previews without public storage URLs or third-party document viewers.
@@ -66,6 +67,9 @@ npm run calls:integration
 npm run meetings:integration
 npm run screen-share:integration
 npm run recording:integration
+npm run media-infra:check
+# Requires a healthy Docker Linux engine and performs a real Room Composite MP4 test:
+npm run media-infra:smoke
 npm run desktop:renderer-smoke
 npm run desktop:call-renderer-smoke
 npm run desktop:meeting-renderer-smoke
@@ -74,7 +78,7 @@ npm run desktop:stage6e-renderer-smoke
 npm run harness
 ```
 
-The web MVP runs at `http://127.0.0.1:3000`. The API fails closed when PostgreSQL is unavailable. `npm run infra:up` starts the shared PostgreSQL/Redis/object-storage development stack; the portable commands prepare PostgreSQL 18.4 and the checksum-pinned LiveKit 1.13.3 Windows test server under `%LOCALAPPDATA%\HahaTalkDev`. The LiveKit development server is loopback-only and is not an external deployment. Real users require configured `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` backed by trusted TLS and TURN. Recording additionally requires a separately deployed LiveKit Egress service, protected S3-compatible storage, and the `LIVEKIT_EGRESS_*` settings documented in `.env.example`; the Windows client does not bundle Egress. Production LiveKit and storage credentials belong in a centrally managed API/secret manager, never in an end-user desktop installation or renderer.
+The web MVP runs at `http://127.0.0.1:3000`. The API fails closed when PostgreSQL is unavailable. `npm run infra:up` starts the shared PostgreSQL/Redis/object-storage development stack; the portable commands prepare PostgreSQL 18.4 and the checksum-pinned LiveKit 1.13.3 Windows test server under `%LOCALAPPDATA%\HahaTalkDev`. The LiveKit development server is loopback-only and is not an external deployment. Real users require configured `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` backed by trusted TLS and TURN. Recording additionally requires a separately deployed LiveKit Egress service, protected S3-compatible storage, and the `LIVEKIT_EGRESS_*` settings documented in `.env.example`; the Windows client does not bundle Egress. `infra/media` renders and validates this central-service boundary without committing credentials. Production LiveKit and storage credentials belong in a centrally managed API/secret manager, never in an end-user desktop installation or renderer.
 
 The Windows installer is generated at `apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe`. It is currently unsigned and intended for local development validation until a Windows code-signing certificate is configured.
 
@@ -116,4 +120,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-6c-scheduled-meeting-lobby.md`: Stage 6C occurrence binding, lobby admission, media roles, live permission updates, PC UX, and verification contract.
 - `docs/stage-6d-screen-share-device-background.md`: Stage 6D explicit screen permission, device/background privacy, PC UX, and installed-renderer verification contract.
 - `docs/stage-6e-recording-consent-egress.md`: Stage 6E unanimous recording consent, Egress/storage boundary, signed webhook, fail-closed lifecycle, PC UX, and verification contract.
+- `docs/stage-6f-trusted-media-infrastructure.md`: Stage 6F trusted deployment manifest, shared Redis/Egress, private storage, retention, and real-MP4 infrastructure gate.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

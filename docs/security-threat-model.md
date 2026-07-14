@@ -53,6 +53,10 @@
 | Recording stop is uncertain | Attempt provider stop, delete the media room on uncertainty, invalidate participant state/tokens, mark session failed, and append fail-closed audit evidence |
 | Client or audit leaks recording storage/provider identifiers | Keep Egress ID, provider room, object key, and S3 credentials server-only; emit only viewer-safe lifecycle projections and session-ID realtime hints |
 | End-user desktop exposes production provider credentials | Treat the embedded API as a local MVP runtime only; keep production LiveKit/Egress/S3 credentials in a centrally managed backend and secret manager, never in the shipped renderer or desktop environment |
+| Public media deployment silently falls back to insecure signaling | Reject production manifests unless signaling, Egress worker access, object storage, and webhooks use trusted TLS; require a separate TURN/TLS hostname and explicit RTC firewall ports |
+| Egress credentials expose or erase recordings | Scope the worker principal to bucket location, multipart operations, and `PutObject` under `recordings/*`; deny object listing, `GetObject`, `DeleteObject`, anonymous access, and wildcard actions |
+| Generated media secrets enter Git, logs, or packages | Render only into ignored operator-controlled paths, print names rather than values, redact summaries, and scan packaged resources and Git status before release |
+| Recording objects persist indefinitely | Apply an organization-approved lifecycle rule, verify its exact duration in the deployment smoke, and use a separate API principal for future playback/deletion |
 | Voice impersonation | Purpose-specific subject consent, encrypted embedding, watermark, audit, revoke/delete |
 | Remote control uses stale approval | Session-scoped short expiry, separate control grant, target emergency stop |
 | Electron renderer reaches native control | Context isolation, narrow preload API, signed separate support agent |
@@ -78,4 +82,7 @@
 - Confirm recording requests snapshot only joined participants, reject policy mismatch, require every grant, block non-snapshot joins, and permit immediate participant revoke.
 - Confirm recording REST/realtime/audit projections omit provider Egress ID, provider room, object key, storage credentials, JWTs, and webhook signature material.
 - Confirm invalid Egress signatures and wrong webhook content types fail, duplicate states do not multiply durable events, and uncertain provider stop deletes the room and fails the session closed.
+- Confirm production media manifests reject `ws`, loopback/private public endpoints, placeholder secrets, insecure object storage/webhooks, missing TURN/TLS, and a signaling-shared TURN hostname.
+- Confirm LiveKit and Egress render the exact same authenticated Redis address, generated summaries contain no secret values, and smoke management/object ports bind only to loopback.
+- Confirm a real Egress worker can write an MP4 but cannot read or delete it, anonymous retrieval fails, retention matches policy, and cleanup leaves no provider room or smoke object.
 - Confirm session cookies contain `HttpOnly` and `SameSite=Strict`, API JSON contains no token, and PostgreSQL contains only a 32-byte digest.

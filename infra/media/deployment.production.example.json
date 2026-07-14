@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "environment": "production",
+  "livekit": {
+    "publicUrl": "wss://livekit.company.invalid",
+    "workerUrl": "wss://livekit-internal.company.invalid",
+    "redisAddress": "redis-internal.company.invalid:6379",
+    "nodeIp": null,
+    "useExternalIp": true,
+    "rtc": {
+      "tcpPort": 7881,
+      "portRangeStart": 50000,
+      "portRangeEnd": 60000
+    },
+    "turn": {
+      "enabled": true,
+      "domain": "turn.company.invalid",
+      "tlsPort": 5349,
+      "externalTls": true
+    }
+  },
+  "egress": {
+    "healthPort": 8080,
+    "prometheusPort": 8081,
+    "fileOutputMaxDuration": "4h"
+  },
+  "storage": {
+    "endpoint": "https://objects.company.invalid",
+    "verificationEndpoint": "https://objects.company.invalid",
+    "bucket": "hahatalk-recordings-production",
+    "region": "ap-northeast-2",
+    "forcePathStyle": true,
+    "retentionDays": 30
+  },
+  "webhookUrl": "https://api.company.invalid/provider/livekit/webhook"
+}

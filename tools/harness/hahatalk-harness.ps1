@@ -50,6 +50,7 @@ function Invoke-CheckedCommand {
 Invoke-CheckedCommand -Command @("npm", "run", "typecheck")
 Invoke-CheckedCommand -Command @("npm", "test")
 Invoke-CheckedCommand -Command @("npm", "run", "schema:check")
+Invoke-CheckedCommand -Command @("npm", "run", "media-infra:check")
 Invoke-CheckedCommand -Command @("npm", "run", "desktop:check")
 Invoke-CheckedCommand -Command @("npm", "run", "build")
 if ($env:OS -eq "Windows_NT" -and [string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {

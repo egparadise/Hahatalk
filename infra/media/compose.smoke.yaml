@@ -1,0 +1,92 @@
+name: hahatalk-media-smoke
+
+services:
+  redis:
+    image: redis:8.8.0-alpine3.23@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
+    env_file:
+      - ./runtime/redis.env
+    command:
+      - sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+    volumes:
+      - media-redis:/data
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z@sha256:064117214caceaa8d8a90ef7caa58f2b2aeb316b5156afe9ee8da5b4d83e12c8
+    command: server /data --console-address ":9001"
+    env_file:
+      - ./runtime/minio.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 40
+      start_period: 5s
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    restart: unless-stopped
+    volumes:
+      - media-objects:/data
+
+  minio-provision:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    env_file:
+      - ./runtime/provision.env
+    entrypoint: ["/bin/sh", "/scripts/provision-minio.sh"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - ./provision-minio.sh:/scripts/provision-minio.sh:ro
+      - ./runtime/egress-write-policy.json:/policies/egress-write-policy.json:ro
+
+  livekit:
+    image: livekit/livekit-server:v1.13.3@sha256:483b8b7b5b0654f91f1e8bdc7b46fcd37fd9911612ecf627f97e3185a89825bd
+    command: ["--config", "/etc/hahatalk/livekit.yaml"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:7880:7880"
+      - "127.0.0.1:7881:7881"
+      - "127.0.0.1:7882:7882/udp"
+    restart: unless-stopped
+    stop_grace_period: 10s
+    volumes:
+      - ./runtime/livekit.yaml:/etc/hahatalk/livekit.yaml:ro
+
+  egress:
+    image: livekit/egress:v1.12.0@sha256:30b3389518c851e6c20e964bba9d5ce89d0bd09b8b0fe0d0d36c9546303c8430
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      EGRESS_CONFIG_FILE: /etc/hahatalk/egress.yaml
+    depends_on:
+      livekit:
+        condition: service_started
+      minio-provision:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8091:8080"
+      - "127.0.0.1:8092:8081"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - ./runtime/egress.yaml:/etc/hahatalk/egress.yaml:ro
+      - media-egress-backup:/var/lib/livekit-egress/backup
+
+volumes:
+  media-egress-backup:
+  media-objects:
+  media-redis:

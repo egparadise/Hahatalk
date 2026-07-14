@@ -16,6 +16,9 @@
     "infra:postgres:portable": "powershell -ExecutionPolicy Bypass -File tools/dev/portable-postgres.ps1 -Action Start",
     "infra:postgres:portable:stop": "powershell -ExecutionPolicy Bypass -File tools/dev/portable-postgres.ps1 -Action Stop",
     "infra:livekit:portable": "powershell -ExecutionPolicy Bypass -File tools/dev/portable-livekit.ps1",
+    "media-infra:prepare": "node tools/infra/render-media-deployment.mjs --generate-smoke-secrets",
+    "media-infra:check": "node tools/harness/media-infrastructure-config.mjs",
+    "media-infra:smoke": "node tools/harness/media-egress-smoke.mjs",
     "dev:desktop": "concurrently -k -n api,web,desktop -c cyan,green,magenta \"npm run dev -w apps/api\" \"npm run dev -w apps/web\" \"wait-on http://127.0.0.1:4000/health http://127.0.0.1:3000 && npm run dev -w apps/desktop\"",
     "desktop:runtime": "npm run runtime:build -w apps/desktop",
     "desktop:package": "npm run runtime:build -w apps/desktop && npm run package -w apps/desktop",
@@ -37,6 +40,7 @@
     "recording:integration": "npm run calls:integration && npm run meetings:integration",
     "desktop:stage6d-renderer-smoke": "npm run desktop:call-renderer-smoke && npm run desktop:meeting-renderer-smoke",
     "desktop:stage6e-renderer-smoke": "npm run desktop:call-renderer-smoke && npm run desktop:meeting-renderer-smoke",
+    "desktop:stage6f-renderer-smoke": "npm run desktop:call-renderer-smoke && npm run desktop:meeting-renderer-smoke",
     "build": "npm run build -w packages/contracts && npm run build -w apps/api && npm run build -w apps/web && npm run build -w apps/desktop",
     "typecheck": "npm run typecheck -w packages/contracts && npm run typecheck -w apps/api && npm run typecheck -w apps/web && npm run typecheck -w apps/desktop",
     "test": "npm run test -w packages/contracts",
@@ -48,11 +52,13 @@
     "lint": "npm run typecheck"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1086.0",
     "concurrently": "^9.1.2",
     "socket.io-client": "^4.8.1",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4",
-    "wait-on": "^8.0.3"
+    "wait-on": "^8.0.3",
+    "yaml": "^2.9.0"
   },
   "overrides": {
     "postcss": "^8.5.10",

@@ -284,8 +284,14 @@ export class LiveKitEgressProviderService {
       try {
         const parsed = new URL(rawEndpoint);
         const local = ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);
+        const privateSmokeEndpoint = process.env.NODE_ENV === "test"
+          && process.env.HAHATALK_TEST_MEDIA_INFRA === "1"
+          && deployment === "local"
+          && ["minio", "host.docker.internal"].includes(parsed.hostname);
         if (parsed.username || parsed.password) return undefined;
-        if (parsed.protocol !== "https:" && !(local && parsed.protocol === "http:")) return undefined;
+        if (parsed.protocol !== "https:" && !((local || privateSmokeEndpoint) && parsed.protocol === "http:")) {
+          return undefined;
+        }
         endpoint = parsed.toString().replace(/\/$/, "");
       } catch {
         return undefined;

@@ -62,3 +62,5 @@ The current MVP harness runs:
 - Smoke test
 
 For UI or desktop changes, also run the app and record the observed result in the Obsidian report.
+
+For central media infrastructure changes, always run `npm run media-infra:check`. Run `npm run media-infra:smoke` when a Docker Linux engine or production-equivalent Egress environment is available. The real-media command is intentionally strict: an unavailable engine, missing worker, failed MP4, public object, incorrect retention rule, or failed cleanup is a failed deployment gate and must not be converted into a skip-success result.

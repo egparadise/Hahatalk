@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "environment": "smoke",
+  "livekit": {
+    "publicUrl": "ws://127.0.0.1:7880",
+    "workerUrl": "ws://livekit:7880",
+    "redisAddress": "redis:6379",
+    "nodeIp": null,
+    "useExternalIp": false,
+    "rtc": {
+      "tcpPort": 7881,
+      "udpPort": 7882
+    },
+    "turn": {
+      "enabled": false
+    }
+  },
+  "egress": {
+    "healthPort": 8080,
+    "prometheusPort": 8081,
+    "fileOutputMaxDuration": "15m"
+  },
+  "storage": {
+    "endpoint": "http://minio:9000",
+    "verificationEndpoint": "http://127.0.0.1:9000",
+    "bucket": "hahatalk-recordings-smoke",
+    "region": "us-east-1",
+    "forcePathStyle": true,
+    "retentionDays": 7
+  },
+  "webhookUrl": null
+}

@@ -15,3 +15,6 @@ model-weights/
 uploads/
 apps/desktop/runtime/
 apps/desktop/assets/*.ico
+infra/media/runtime/
+infra/media/smoke-artifacts/
+infra/media/secrets/

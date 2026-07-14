@@ -58,7 +58,7 @@ async function startApi(port, webOrigin) {
   child.stdout.on("data", (chunk) => logs.push(String(chunk)));
   child.stderr.on("data", (chunk) => logs.push(String(chunk)));
 
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
     if (child.exitCode !== null) {
       throw new Error(`HahaTalk API exited during invitation test startup.\n${logs.join("")}`);
     }
