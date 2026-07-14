@@ -5,6 +5,7 @@ out/
 coverage/
 .turbo/
 .cache/
+.expo/
 *.log
 *.tsbuildinfo
 .env

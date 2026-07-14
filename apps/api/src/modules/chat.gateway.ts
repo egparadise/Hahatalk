@@ -60,7 +60,14 @@ export class ChatGateway implements OnGatewayInit {
     this.realtime.attach(server);
     server.use(async (socket, next) => {
       try {
-        const principal = await this.authService.authenticateCookieHeader(socket.handshake.headers.cookie);
+        const cookiePrincipal = await this.authService.authenticateCookieHeader(socket.handshake.headers.cookie);
+        const mobileAccessToken = typeof socket.handshake.auth?.accessToken === "string"
+          ? socket.handshake.auth.accessToken
+          : undefined;
+        const principal = cookiePrincipal
+          ?? (mobileAccessToken?.startsWith("hha_")
+            ? await this.authService.authenticateMobileToken(mobileAccessToken)
+            : undefined);
         if (!principal) {
           next(new Error("Authentication required."));
           return;

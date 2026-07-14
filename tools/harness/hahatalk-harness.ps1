@@ -22,6 +22,10 @@ $required = @(
   "apps/web/components/remote-support-panel.tsx",
   "apps/api/src/main.ts",
   "apps/api/src/remote-support/remote-support.service.ts",
+  "apps/api/src/mobile/mobile.service.ts",
+  "apps/api/migrations/014_mobile_companion.sql",
+  "apps/mobile/app.config.ts",
+  "apps/mobile/src/lib/offline-queue.ts",
   "apps/desktop/main.cjs",
   "apps/desktop/remote-support-agent.cjs"
 )
@@ -56,10 +60,12 @@ Invoke-CheckedCommand -Command @("npm", "test")
 Invoke-CheckedCommand -Command @("npm", "run", "schema:check")
 Invoke-CheckedCommand -Command @("npm", "run", "media-infra:check")
 Invoke-CheckedCommand -Command @("npm", "run", "desktop:check")
+Invoke-CheckedCommand -Command @("npm", "run", "mobile:check")
 if ($env:OS -eq "Windows_NT") {
   Invoke-CheckedCommand -Command @("npm", "run", "desktop:remote-agent-process-smoke")
 }
 Invoke-CheckedCommand -Command @("npm", "run", "build")
+Invoke-CheckedCommand -Command @("npm", "run", "mobile:bundle-check")
 if ($env:OS -eq "Windows_NT" -and [string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
   Invoke-CheckedCommand -Command @(
     "powershell",
@@ -84,6 +90,7 @@ if ($env:OS -eq "Windows_NT") {
 }
 Invoke-CheckedCommand -Command @("npm", "run", "ai:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "remote-support:integration")
+Invoke-CheckedCommand -Command @("npm", "run", "mobile:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
 
 $verificationDir = Join-Path $root "node_modules\.cache"

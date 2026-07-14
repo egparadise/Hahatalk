@@ -767,6 +767,102 @@ export interface AuthSession {
   expiresAt: string;
 }
 
+export type MobilePlatform = "android" | "ios";
+export type MobilePushProvider = "expo" | "fcm" | "apns";
+
+export interface MobileLoginInput {
+  email: string;
+  password: string;
+  installationId: string;
+  platform: MobilePlatform;
+  appVersion: string;
+}
+
+export interface MobileRefreshInput {
+  refreshToken: string;
+  installationId: string;
+  platform: MobilePlatform;
+  appVersion: string;
+}
+
+export interface MobileAuthView {
+  accessToken: string;
+  refreshToken: string;
+  accessExpiresAt: string;
+  refreshExpiresAt: string;
+  session: AuthSession;
+}
+
+export interface MobileCapabilitiesView {
+  platform: "android" | "ios" | "unknown";
+  apiVersion: 1;
+  push: {
+    registrationAvailable: boolean;
+    dispatchMode: "external_worker";
+    payloadPolicy: "generic_no_message_content";
+    reason?: string;
+  };
+  calls: {
+    provider: "livekit";
+    developmentBuildRequired: true;
+  };
+  screenShare: {
+    available: false;
+    reason: string;
+  };
+  remoteControl: {
+    available: false;
+    reason: string;
+  };
+  offlineQueue: {
+    encryption: "aes-256-gcm";
+    maxItems: number;
+  };
+}
+
+export interface RegisterMobileDeviceInput {
+  installationId: string;
+  platform: MobilePlatform;
+  pushProvider: MobilePushProvider;
+  pushToken: string;
+  appVersion: string;
+  osVersion: string;
+  locale: string;
+  timezone: string;
+  capabilities: {
+    notifications: boolean;
+    calls: boolean;
+  };
+}
+
+export interface MobileDeviceView {
+  id: string;
+  platform: MobilePlatform;
+  pushProvider: MobilePushProvider;
+  appVersion: string;
+  osVersion: string;
+  locale: string;
+  timezone: string;
+  status: "active" | "revoked";
+  current: boolean;
+  createdAt: string;
+  lastSeenAt: string;
+  revokedAt?: string;
+}
+
+export interface MobilePushJobView {
+  id: string;
+  eventType: "conversation.message" | "calendar.reminder" | "call.invite" | "meeting.lobby" | "broadcast.started";
+  title: string;
+  body: string;
+  route: string;
+  payload: Record<string, string>;
+  pushProvider: MobilePushProvider;
+  pushToken: string;
+  attempt: number;
+  expiresAt: string;
+}
+
 export interface ConversationView {
   room: RoomPresentation;
   users: User[];

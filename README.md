@@ -1,6 +1,6 @@
 # HahaTalk / 인비즈톡
 
-HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups, an owner-centered private hub, personal broadcasting, and a consent-aware AI workbench. It runs as a PC web MVP and as a self-starting Windows Electron application with an embedded NestJS API; Android and iOS clients are staged after the persisted conversation API.
+HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups, an owner-centered private hub, personal broadcasting, and a consent-aware AI workbench. It runs as a PC web MVP, a self-starting Windows Electron application with an embedded NestJS API, and an Expo Android/iOS companion.
 
 ## What Runs Today
 
@@ -41,6 +41,9 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Editable STT review and explicit one-time approval before a normal Smart Room message is sent, plus immediate voice-consent revoke and derivative deletion queues.
 - A Windows x64 package and Squirrel installer that include a managed PostgreSQL 18.4 runtime and start without Node.js, npm, Docker, or separate development servers.
 - Single-instance protection, dynamic loopback ports, runtime health evidence, secure navigation, and clean API shutdown.
+- Consent-bound Windows remote support with exact requester/target roles, expiring activation credentials, monotonic command fencing, pause/revoke/emergency stop, and an unsigned-agent dry-run boundary that cannot inject native input.
+- Expo SDK 57 Android/iOS companion with protected routes, SecureStore sessions, AES-256-GCM offline replies, Smart Room viewer-safe chat, media viewing/sharing, calendar RSVP, broadcast viewing, and LiveKit call participation.
+- Rotating mobile refresh tokens, bearer-authenticated Socket.IO, encrypted push tokens, generic no-content message/call/meeting/broadcast jobs, lease/retry delivery, and logout/device revocation cleanup.
 
 ## Commands
 
@@ -73,6 +76,11 @@ npm run screen-share:integration
 npm run recording:integration
 npm run broadcasts:integration
 npm run ai:integration
+npm run remote-support:integration
+npm run mobile:check
+npm run mobile:integration
+npm run mobile:export
+npm run mobile:bundle-check
 npm run media-infra:check
 # Requires a healthy Docker Linux engine and performs a real Room Composite MP4 test:
 npm run media-infra:smoke
@@ -84,12 +92,15 @@ npm run desktop:stage6d-renderer-smoke
 npm run desktop:stage6e-renderer-smoke
 npm run desktop:stage7-renderer-smoke
 npm run desktop:stage8-renderer-smoke
+npm run desktop:stage9-renderer-smoke
 npm run harness
 ```
 
 The web MVP runs at `http://127.0.0.1:3000`. The API fails closed when PostgreSQL is unavailable. `npm run infra:up` starts the shared PostgreSQL/Redis/object-storage development stack; the portable commands prepare PostgreSQL 18.4 and the checksum-pinned LiveKit 1.13.3 Windows test server under `%LOCALAPPDATA%\HahaTalkDev`. The LiveKit development server is loopback-only and is not an external deployment. Real users require configured `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` backed by trusted TLS and TURN. Recording additionally requires a separately deployed LiveKit Egress service, protected S3-compatible storage, and the `LIVEKIT_EGRESS_*` settings documented in `.env.example`; the Windows client does not bundle Egress. `infra/media` renders and validates this central-service boundary without committing credentials. Production LiveKit and storage credentials belong in a centrally managed API/secret manager, never in an end-user desktop installation or renderer.
 
 The Windows installer is generated at `apps/desktop/out/make/squirrel.windows/x64/HahaTalkSetup.exe`. It is currently unsigned and intended for local development validation until a Windows code-signing certificate is configured.
+
+The mobile Hermes exports are generated under `apps/mobile/dist/android` and `apps/mobile/dist/ios`. APK/IPA signing, APNs/FCM delivery, and physical-device camera/microphone validation remain external release gates that require a real EAS project and store credentials; mobile remote control and screen publishing remain disabled.
 
 ## Project Operations
 
@@ -132,4 +143,6 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-6f-trusted-media-infrastructure.md`: Stage 6F trusted deployment manifest, shared Redis/Egress, private storage, retention, and real-MP4 infrastructure gate.
 - `docs/stage-7-personal-broadcast.md`: Stage 7 channel subscription boundary, hidden viewers, moderated Q&A, live roles, replay gate, PC UX, and installed-renderer verification contract.
 - `docs/stage-8-ai-voice-workbench.md`: Stage 8 durable jobs, worker leases, STT review, scoped summaries, Korean TTS, consented voice/avatar processing, and installed-renderer verification contract.
+- `docs/stage-9-consented-remote-support.md`: Stage 9 attended support consent, command fencing, isolated agent process, emergency stop, and signed-native release gate.
+- `docs/stage-10-mobile-companion.md`: Stage 10 mobile auth, encrypted offline queue, generic push, Expo routes, media/calendar/broadcast/call surfaces, and native release gates.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

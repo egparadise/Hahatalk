@@ -72,6 +72,11 @@ const requiredTables = [
   "remote_support_agent_credentials",
   "remote_support_commands",
   "remote_support_events",
+  "mobile_sessions",
+  "mobile_refresh_tokens",
+  "mobile_devices",
+  "mobile_push_jobs",
+  "mobile_push_attempts",
   "audit_logs",
   "idempotency_keys",
   "outbox_events"
@@ -140,6 +145,10 @@ const requiredFragments = [
   "command_kind in ('pointer_move', 'pointer_button', 'wheel', 'key')",
   "client_command_id",
   "control_epoch",
+  "mobile_sessions_active_installation_idx",
+  "push_token_ciphertext bytea not null",
+  "event_type in ('conversation.message', 'calendar.reminder', 'call.invite', 'meeting.lobby', 'broadcast.started')",
+  "mobile_push_jobs_claim_idx",
 ];
 
 for (const fragment of requiredFragments) {
@@ -174,8 +183,10 @@ const governanceFiles = [
   "apps/api/migrations/011_personal_broadcast.sql",
   "apps/api/migrations/012_ai_voice_workbench.sql",
   "apps/api/migrations/013_consented_remote_support.sql",
+  "apps/api/migrations/014_mobile_companion.sql",
   "docs/stage-8-ai-voice-workbench.md",
   "docs/stage-9-consented-remote-support.md",
+  "docs/stage-10-mobile-companion.md",
   "docs/stage-6f-trusted-media-infrastructure.md",
   "infra/media/README.md",
   "infra/media/compose.smoke.yaml",
@@ -187,6 +198,10 @@ const governanceFiles = [
   "tools/harness/media-egress-smoke.mjs",
   "tools/harness/media-infrastructure-config.mjs",
   "tools/harness/consented-remote-support.mjs",
+  "tools/harness/mobile-companion.mjs",
+  "tools/harness/mobile-bundle-check.mjs",
+  "apps/mobile/app.config.ts",
+  "apps/mobile/src/lib/offline-queue.ts",
   "tools/harness/windows-remote-agent-process-smoke.cjs",
   "tools/harness/windows-remote-support-renderer-smoke.mjs"
 ];

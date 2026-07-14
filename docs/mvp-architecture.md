@@ -4,7 +4,7 @@
 
 - `apps/web`: Next.js + TypeScript work desk and browser client.
 - `apps/desktop`: Electron shell for Windows capture, tray, multi-window, and future support-agent launch.
-- `apps/mobile`: planned Expo/React Native app for Android and iOS.
+- `apps/mobile`: Expo SDK 57/React Native Android and iOS companion for secure short replies, schedule, media, broadcast viewing, and call participation.
 - `apps/api`: NestJS modular monolith for identity, conversations, media, schedule, calls, broadcasts, AI jobs, consent, and audit.
 - `packages/contracts`: shared viewer-safe domain contracts.
 - PostgreSQL: relational state and metadata.
@@ -62,6 +62,9 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - PostgreSQL-backed broadcast channels and subscriptions, hidden subscribe-only LiveKit viewers, live stage-role updates, moderated Q&A/reactions, private-chat handoff, and a replay state that fails closed without trusted Egress.
 - PostgreSQL-backed AI jobs with authenticated worker leases, fencing, visibility-scoped inputs, editable STT drafts, Qwen 3.5+ model policy, standard Korean TTS, and purpose-bound voice/avatar consent.
 - An optional Redis Streams wake-up adapter that carries only opaque job identifiers; the Python worker receives authorized inputs through the internal API and never reads the application database.
+- Consent-bound remote-support sessions with exact target approval, expiring agent activation, monotonic command fencing, pause/revoke/emergency stop, and an isolated unsigned dry-run agent.
+- Mobile bearer sessions with rotating one-time refresh tokens, SecureStore-backed client state, AES-256-GCM offline mutations, viewer-safe Socket.IO, encrypted push tokens, and generic message/call/meeting/broadcast notifications.
+- Android and iOS Expo Router surfaces for Smart Room chat, read/confirmation state, files, calendar/RSVP, personal broadcasts, and least-privilege LiveKit call or meeting participation.
 - Repo-local AGENTS, Skill, Agents, Hooks, schema validation, and harness loop.
 
 ## Production Boundaries Still Required
@@ -74,6 +77,8 @@ An owner `all` message becomes `hub_announcement`; each participant receives it 
 - Keep broadcast replay unavailable until the same trusted Egress and protected object-storage gate produces and verifies a real asset; renderer-local recording is not a replay substitute.
 - Deploy and benchmark the model worker profiles on approved GPU hardware; the control plane and deterministic harness are complete, but model weights are not bundled in the Windows client.
 - Add a support-agent security review before remote control code is enabled.
+- Configure a real EAS project, APNs/FCM credentials, signed development builds, store signing, and physical Android/iOS device tests. Mobile screen publishing and remote control remain unavailable until their separate native privacy gates are completed.
+- Resolve the Expo build-tool `uuid` advisory when the SDK dependency chain ships a non-breaking patched release; the vulnerable buffer-taking UUID APIs are not called or bundled into the Windows/server runtime.
 
 ## Sensitive Feature Rules
 

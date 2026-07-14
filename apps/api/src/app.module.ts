@@ -13,6 +13,7 @@ import { RecordingsModule } from "./recordings/recordings.module.js";
 import { BroadcastsModule } from "./broadcasts/broadcasts.module.js";
 import { AiModule } from "./ai/ai.module.js";
 import { RemoteSupportModule } from "./remote-support/remote-support.module.js";
+import { MobileModule } from "./mobile/mobile.module.js";
 
 @Module({
   imports: [
@@ -29,7 +30,8 @@ import { RemoteSupportModule } from "./remote-support/remote-support.module.js";
     MeetingsModule,
     BroadcastsModule,
     AiModule,
-    RemoteSupportModule
+    RemoteSupportModule,
+    MobileModule
   ]
 })
 export class AppModule {}

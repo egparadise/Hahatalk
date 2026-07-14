@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Res, UseGuards } from "@nestjs/common";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
-import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsEmail, IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
+import type { MobileLoginInput, MobilePlatform, MobileRefreshInput } from "@hahatalk/contracts";
 import type { Response } from "express";
 import { clearSessionCookie, setSessionCookie } from "./auth-cookie.js";
 import { CurrentAuth, PublicRoute } from "./auth.decorators.js";
@@ -41,6 +42,46 @@ class LoginDto {
   password = "";
 }
 
+class MobileLoginDto implements MobileLoginInput {
+  @IsEmail()
+  @MaxLength(254)
+  email = "";
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  password = "";
+
+  @IsUUID()
+  installationId = "";
+
+  @IsIn(["android", "ios"])
+  platform: MobilePlatform = "android";
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  appVersion = "";
+}
+
+class MobileRefreshDto implements MobileRefreshInput {
+  @IsString()
+  @MinLength(40)
+  @MaxLength(160)
+  refreshToken = "";
+
+  @IsUUID()
+  installationId = "";
+
+  @IsIn(["android", "ios"])
+  platform: MobilePlatform = "android";
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  appVersion = "";
+}
+
 @Controller("auth")
 @UseGuards(ThrottlerGuard)
 export class AuthController {
@@ -72,6 +113,24 @@ export class AuthController {
     setSessionCookie(response, created.cookieToken);
     response.setHeader("Cache-Control", "no-store");
     return created.principal.state;
+  }
+
+  @PublicRoute()
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @Post("mobile/login")
+  async mobileLogin(@Body() body: MobileLoginDto, @Res({ passthrough: true }) response: Response) {
+    const { principal: _principal, ...view } = await this.authService.mobileLogin(body);
+    response.setHeader("Cache-Control", "no-store");
+    return view;
+  }
+
+  @PublicRoute()
+  @Throttle({ default: { limit: 16, ttl: 60_000 } })
+  @Post("mobile/refresh")
+  async mobileRefresh(@Body() body: MobileRefreshDto, @Res({ passthrough: true }) response: Response) {
+    const { principal: _principal, ...view } = await this.authService.mobileRefresh(body);
+    response.setHeader("Cache-Control", "no-store");
+    return view;
   }
 
   @Get("me")

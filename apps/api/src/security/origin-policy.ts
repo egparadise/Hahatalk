@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 export const hahaTalkClientHeader = "X-HahaTalk-Client";
 export const hahaTalkClientHeaderValue = "web-v1";
+export const hahaTalkMobileClientHeaderValue = "mobile-v1";
 
 export function createOriginPolicy(allowedOrigin: string) {
   const normalizedAllowedOrigin = new URL(allowedOrigin).origin;
@@ -41,9 +42,30 @@ export function createOriginPolicy(allowedOrigin: string) {
       return;
     }
 
+    if (
+      request.path.startsWith("/internal/mobile/push/")
+      && Boolean(request.header("X-HahaTalk-Mobile-Worker-Token"))
+    ) {
+      next();
+      return;
+    }
+
     const origin = request.headers.origin;
-    const clientHeader = request.header(hahaTalkClientHeader);
     const fetchSite = request.header("Sec-Fetch-Site");
+    const clientHeader = request.header(hahaTalkClientHeader);
+    const isExactMobilePublicAuth = request.method.toUpperCase() === "POST"
+      && ["/auth/mobile/login", "/auth/mobile/refresh"].includes(request.path);
+    const hasMobileBearer = /^Bearer hha_[A-Za-z0-9_-]{40,150}$/.test(request.header("Authorization") ?? "");
+    if (
+      clientHeader === hahaTalkMobileClientHeaderValue
+      && !origin
+      && !fetchSite
+      && (isExactMobilePublicAuth || hasMobileBearer)
+    ) {
+      next();
+      return;
+    }
+
     if (
       origin !== normalizedAllowedOrigin ||
       clientHeader !== hahaTalkClientHeaderValue ||

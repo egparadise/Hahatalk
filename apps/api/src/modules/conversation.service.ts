@@ -451,6 +451,7 @@ export class ConversationService {
         );
         await this.insertOutbox(client, messageId, recipientInternalId, "conversation.message.created");
       }
+      await this.insertMobilePushJobs(client, messageId, input.spaceId, principal.internalUserId);
       await client.query(
         `update idempotency_keys
          set response_json = jsonb_build_object('messageId', $4::text), status_code = 201
@@ -615,6 +616,7 @@ export class ConversationService {
         );
         await this.insertOutbox(client, messageId, recipientInternalId, "conversation.message.created");
       }
+      await this.insertMobilePushJobs(client, messageId, input.spaceId, principal.internalUserId);
       await client.query(
         "update media_assets set archive_scope = $2, updated_at = now() where id = $1",
         [assetId, input.archiveScope]
@@ -1294,6 +1296,35 @@ export class ConversationService {
       `insert into outbox_events (aggregate_type, aggregate_id, event_type, payload_json)
        values ('message', $1, $2, $3::jsonb)`,
       [messageId, eventType, JSON.stringify({ recipientInternalId, ...extra })]
+    );
+  }
+
+  private insertMobilePushJobs(
+    client: PoolClient,
+    messageId: string,
+    spaceId: string,
+    senderId: string
+  ) {
+    const route = `/space/${spaceId}`;
+    return client.query(
+      `insert into mobile_push_jobs (
+         organization_id, recipient_id, device_id, event_key, event_type,
+         title, body, route, payload_json, expires_at
+       )
+       select dvc.organization_id, delivery.recipient_id, dvc.id,
+              'message:' || $1::text, 'conversation.message',
+              'HahaTalk', '\uC0C8 \uBA54\uC2DC\uC9C0\uAC00 \uB3C4\uCC29\uD588\uC2B5\uB2C8\uB2E4.', $3,
+              jsonb_build_object('route', $3::text, 'eventType', 'conversation.message'),
+              now() + interval '24 hours'
+       from message_deliveries delivery
+       join mobile_devices dvc on dvc.user_id = delivery.recipient_id and dvc.status = 'active'
+       join mobile_sessions mobile_session on mobile_session.id = dvc.mobile_session_id
+         and mobile_session.revoked_at is null
+         and mobile_session.idle_expires_at > now()
+         and mobile_session.absolute_expires_at > now()
+       where delivery.message_id = $1::uuid and delivery.recipient_id <> $2 and delivery.revoked_at is null
+       on conflict (device_id, event_key) do nothing`,
+      [messageId, senderId, route]
     );
   }
 
