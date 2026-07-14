@@ -69,6 +69,8 @@ const requiredTables = [
   "tts_assets",
   "remote_support_sessions",
   "remote_support_consents",
+  "remote_support_agent_credentials",
+  "remote_support_commands",
   "remote_support_events",
   "audit_logs",
   "idempotency_keys",
@@ -134,6 +136,10 @@ const requiredFragments = [
   "review_status text not null check (review_status in ('ai_draft', 'sending', 'reviewed', 'rejected'))",
   "source in ('file_upload', 'screen_capture', 'ai_generated')",
   "minimum_version in ('3.5', '3.6')",
+  "credential_kind in ('activation', 'agent')",
+  "command_kind in ('pointer_move', 'pointer_button', 'wheel', 'key')",
+  "client_command_id",
+  "control_epoch",
 ];
 
 for (const fragment of requiredFragments) {
@@ -167,7 +173,9 @@ const governanceFiles = [
   "apps/api/migrations/010_recording_consent_egress.sql",
   "apps/api/migrations/011_personal_broadcast.sql",
   "apps/api/migrations/012_ai_voice_workbench.sql",
+  "apps/api/migrations/013_consented_remote_support.sql",
   "docs/stage-8-ai-voice-workbench.md",
+  "docs/stage-9-consented-remote-support.md",
   "docs/stage-6f-trusted-media-infrastructure.md",
   "infra/media/README.md",
   "infra/media/compose.smoke.yaml",
@@ -177,7 +185,10 @@ const governanceFiles = [
   "tools/infra/media-deployment-lib.mjs",
   "tools/infra/render-media-deployment.mjs",
   "tools/harness/media-egress-smoke.mjs",
-  "tools/harness/media-infrastructure-config.mjs"
+  "tools/harness/media-infrastructure-config.mjs",
+  "tools/harness/consented-remote-support.mjs",
+  "tools/harness/windows-remote-agent-process-smoke.cjs",
+  "tools/harness/windows-remote-support-renderer-smoke.mjs"
 ];
 
 for (const file of governanceFiles) {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, desktopCapturer, dialog, screen, session, shell, utilityProcess } = require("electron");
+const { app, BrowserWindow, Menu, desktopCapturer, dialog, ipcMain, screen, session, shell, utilityProcess } = require("electron");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const { randomBytes } = require("node:crypto");
@@ -45,6 +45,8 @@ let runtimeStatus = null;
 let shuttingDown = false;
 let quitCleanupStarted = false;
 let quitCleanupComplete = false;
+let remoteSupportAgent = null;
+let remoteSupportAgentStatus = { state: "stopped" };
 
 function runSquirrelCommand(args) {
   const updateExecutable = path.resolve(path.dirname(process.execPath), "..", "Update.exe");
@@ -509,6 +511,107 @@ function openExternalUrl(value) {
   }
 }
 
+function isTrustedRenderer(event) {
+  const senderUrl = event.senderFrame?.url || event.sender?.getURL();
+  return Boolean(senderUrl && isAllowedInternalUrl(senderUrl));
+}
+
+function broadcastRemoteSupportStatus(status) {
+  remoteSupportAgentStatus = { ...remoteSupportAgentStatus, ...status, updatedAt: new Date().toISOString() };
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send("remote-support:agent-status", remoteSupportAgentStatus);
+  }
+}
+
+function remoteSupportDeviceId() {
+  const devicePath = path.join(app.getPath("userData"), "remote-support-device.json");
+  try {
+    const existing = JSON.parse(fs.readFileSync(devicePath, "utf8"));
+    if (typeof existing.deviceId === "string" && /^hht_device_[A-Za-z0-9_-]{24,80}$/.test(existing.deviceId)) {
+      return existing.deviceId;
+    }
+  } catch {
+    // Create an opaque installation identifier below.
+  }
+  const deviceId = `hht_device_${randomBytes(24).toString("base64url")}`;
+  fs.mkdirSync(path.dirname(devicePath), { recursive: true });
+  fs.writeFileSync(devicePath, `${JSON.stringify({ deviceId })}\n`, { encoding: "utf8", mode: 0o600 });
+  return deviceId;
+}
+
+function stopRemoteSupportAgent(reason = "user_stopped") {
+  const agent = remoteSupportAgent;
+  remoteSupportAgent = null;
+  if (agent) {
+    try {
+      agent.postMessage({ type: "stop" });
+      setTimeout(() => agent.kill(), 500).unref();
+    } catch {
+      agent.kill();
+    }
+  }
+  broadcastRemoteSupportStatus({ reason, state: "stopped" });
+  return remoteSupportAgentStatus;
+}
+
+function configureRemoteSupportIpc() {
+  ipcMain.handle("remote-support:agent-status", (event) => {
+    if (!isTrustedRenderer(event)) throw new Error("Untrusted remote support status request.");
+    return remoteSupportAgentStatus;
+  });
+  ipcMain.handle("remote-support:stop-agent", (event) => {
+    if (!isTrustedRenderer(event)) throw new Error("Untrusted remote support stop request.");
+    return stopRemoteSupportAgent();
+  });
+  ipcMain.handle("remote-support:start-agent", (event, payload) => {
+    if (!isTrustedRenderer(event)) throw new Error("Untrusted remote support activation request.");
+    if (
+      !payload
+      || typeof payload.activationSecret !== "string"
+      || !/^[A-Za-z0-9_-]{40,200}$/.test(payload.activationSecret)
+      || typeof payload.sessionId !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.sessionId)
+    ) {
+      throw new Error("Invalid remote support activation payload.");
+    }
+    stopRemoteSupportAgent("replaced");
+    const agentInstanceId = `hht_agent_${randomBytes(24).toString("base64url")}`;
+    const child = utilityProcess.fork(path.join(__dirname, "remote-support-agent.cjs"), [], {
+      env: { NODE_ENV: app.isPackaged ? "production" : "development" },
+      serviceName: "HahaTalk Remote Support Agent",
+      stdio: "pipe"
+    });
+    remoteSupportAgent = child;
+    child.stdout?.on("data", (chunk) => appendRuntimeLog(`[remote-agent] ${String(chunk).trimEnd()}`));
+    child.stderr?.on("data", (chunk) => appendRuntimeLog(`[remote-agent:error] ${String(chunk).trimEnd()}`));
+    child.on("message", (message) => {
+      if (message?.type !== "remote-support-status") return;
+      const { commandKind, controlEpoch, detail, outcome, sequence, state } = message;
+      broadcastRemoteSupportStatus({ commandKind, controlEpoch, detail, outcome, sequence, sessionId: payload.sessionId, state });
+    });
+    child.on("exit", (code) => {
+      if (remoteSupportAgent === child) remoteSupportAgent = null;
+      broadcastRemoteSupportStatus({ exitCode: code, sessionId: payload.sessionId, state: "stopped" });
+    });
+    remoteSupportAgentStatus = { state: "starting" };
+    broadcastRemoteSupportStatus({ mode: "dry_run", sessionId: payload.sessionId, state: "starting" });
+    child.postMessage({
+      type: "activate",
+      configuration: {
+        activationSecret: payload.activationSecret,
+        agentInstanceId,
+        agentVersion: app.getVersion(),
+        apiBaseUrl: runtime.apiUrl,
+        deviceId: remoteSupportDeviceId(),
+        platform: process.platform,
+        sessionId: payload.sessionId
+      }
+    });
+    payload.activationSecret = undefined;
+    return remoteSupportAgentStatus;
+  });
+}
+
 function createWindow(initialUrl = runtime.webUrl) {
   const workArea = screen.getPrimaryDisplay().workAreaSize;
   const width = Math.min(1440, workArea.width);
@@ -664,6 +767,7 @@ async function stopRuntime() {
   runtimeReady = false;
   runtimeStatus = null;
   removeRuntimeStatus();
+  stopRemoteSupportAgent("app_shutdown");
   for (const window of BrowserWindow.getAllWindows()) {
     window.destroy();
   }
@@ -713,6 +817,7 @@ if (squirrelStartup) {
       try {
         runtime = await startRuntime();
         configureSessionPermissions();
+        configureRemoteSupportIpc();
         Menu.setApplicationMenu(buildApplicationMenu());
         writeRuntimeStatus(runtime);
         runtimeReady = true;

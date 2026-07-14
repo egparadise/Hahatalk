@@ -12,6 +12,7 @@ import { MeetingsModule } from "./meetings/meetings.module.js";
 import { RecordingsModule } from "./recordings/recordings.module.js";
 import { BroadcastsModule } from "./broadcasts/broadcasts.module.js";
 import { AiModule } from "./ai/ai.module.js";
+import { RemoteSupportModule } from "./remote-support/remote-support.module.js";
 
 @Module({
   imports: [
@@ -27,7 +28,8 @@ import { AiModule } from "./ai/ai.module.js";
     CallsModule,
     MeetingsModule,
     BroadcastsModule,
-    AiModule
+    AiModule,
+    RemoteSupportModule
   ]
 })
 export class AppModule {}

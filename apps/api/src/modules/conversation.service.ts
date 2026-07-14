@@ -894,7 +894,8 @@ export class ConversationService {
     if (
       (event.payload_json.realtimeEvent?.startsWith("call:")
         || event.payload_json.realtimeEvent?.startsWith("meeting:")
-        || event.payload_json.realtimeEvent?.startsWith("broadcast:"))
+        || event.payload_json.realtimeEvent?.startsWith("broadcast:")
+        || event.payload_json.realtimeEvent?.startsWith("remote-support:"))
       && event.payload_json.realtimePayload !== undefined
     ) {
       return {

@@ -10,9 +10,11 @@ const requiredFiles = [
   "apps/desktop/forge.config.cjs",
   "apps/desktop/main.cjs",
   "apps/desktop/preload.cjs",
+  "apps/desktop/remote-support-agent.cjs",
   "apps/desktop/scripts/build-runtime.mjs",
   "apps/desktop/scripts/generate-windows-icon.ps1",
   "tools/harness/windows-package-smoke.ps1",
+  "tools/harness/windows-remote-agent-process-smoke.cjs",
   "tools/harness/windows-renderer-auth-smoke.mjs",
   "tools/harness/windows-meeting-renderer-smoke.mjs",
   "apps/web/components/live-media-controls.tsx"
@@ -26,6 +28,7 @@ const desktopPackage = JSON.parse(await readFile(path.join(desktopRoot, "package
 const nextConfig = await readFile(path.join(repoRoot, "apps", "web", "next.config.mjs"), "utf8");
 const mainSource = await readFile(path.join(desktopRoot, "main.cjs"), "utf8");
 const preloadSource = await readFile(path.join(desktopRoot, "preload.cjs"), "utf8");
+const remoteAgentSource = await readFile(path.join(desktopRoot, "remote-support-agent.cjs"), "utf8");
 
 const assertions = [
   [desktopPackage.productName === "HahaTalk", "desktop productName must be HahaTalk"],
@@ -36,6 +39,8 @@ const assertions = [
   [mainSource.includes("requestSingleInstanceLock"), "single-instance protection is required"],
   [mainSource.includes("getPrimaryDisplay().workAreaSize"), "window size must respect the Windows work area"],
   [mainSource.includes("utilityProcess.fork"), "packaged API must run in a utility process"],
+  [mainSource.includes("HahaTalk Remote Support Agent"), "remote support must use a separate utility process"],
+  [mainSource.includes("isTrustedRenderer"), "remote support IPC must validate its renderer"],
   [mainSource.includes("setDisplayMediaRequestHandler"), "desktop screen-capture selection handler is required"],
   [mainSource.includes("wasm-unsafe-eval"), "local MediaPipe WebAssembly CSP permission is required"],
   [mainSource.includes("will-navigate"), "navigation restriction is required"],
@@ -46,7 +51,10 @@ const assertions = [
   [mainSource.includes("stopEmbeddedPostgres"), "packaged runtime must stop embedded PostgreSQL"],
   [mainSource.includes("hahatalk_desktop_session"), "desktop cookie namespace is required"],
   [preloadSource.includes("hahatalk-api-url"), "preload must expose the runtime API URL"],
-  [preloadSource.includes("contextBridge"), "preload must use contextBridge"]
+  [preloadSource.includes("contextBridge"), "preload must use contextBridge"],
+  [preloadSource.includes("remote-support:start-agent"), "preload must expose only the narrow remote agent activation IPC"],
+  [remoteAgentSource.includes("unsigned_agent_dry_run"), "unsigned remote agent must remain dry-run"],
+  [!remoteAgentSource.includes("SendInput"), "unsigned remote agent must not contain native input injection"]
 ];
 
 for (const [passed, message] of assertions) {
@@ -64,6 +72,7 @@ if (requireRuntime) {
     path.join(desktopRoot, "runtime", "migrations", "008_scheduled_meeting_lobby.sql"),
     path.join(desktopRoot, "runtime", "migrations", "009_screen_share_device_background.sql"),
     path.join(desktopRoot, "runtime", "migrations", "011_personal_broadcast.sql"),
+    path.join(desktopRoot, "runtime", "migrations", "013_consented_remote_support.sql"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "initdb.exe"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "pg_ctl.exe"),
     path.join(desktopRoot, "runtime", "postgres", "server_license.txt"),

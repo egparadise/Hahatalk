@@ -2,7 +2,27 @@ type HahaTalkDesktopBridge = {
   apiBaseUrl?: string;
   isDesktop: boolean;
   platform: string;
+  remoteSupport?: {
+    onStatus(listener: (status: DesktopRemoteSupportStatus) => void): () => void;
+    startAgent(payload: { activationSecret: string; sessionId: string }): Promise<DesktopRemoteSupportStatus>;
+    status(): Promise<DesktopRemoteSupportStatus>;
+    stopAgent(): Promise<DesktopRemoteSupportStatus>;
+  };
   version?: string;
+};
+
+export type DesktopRemoteSupportStatus = {
+  commandKind?: string;
+  controlEpoch?: number;
+  detail?: string;
+  exitCode?: number;
+  mode?: "dry_run";
+  outcome?: string;
+  reason?: string;
+  sequence?: number;
+  sessionId?: string;
+  state: "stopped" | "starting" | "ready" | "activating" | "online" | "degraded" | "failed";
+  updatedAt?: string;
 };
 
 const desktopBridge = typeof window === "undefined"
@@ -12,6 +32,9 @@ const desktopBridge = typeof window === "undefined"
 export const apiBaseUrl = desktopBridge?.apiBaseUrl
   ?? process.env.NEXT_PUBLIC_API_BASE_URL
   ?? "http://127.0.0.1:4000";
+
+export const desktopRemoteSupport = desktopBridge?.remoteSupport;
+export const isHahaTalkDesktop = desktopBridge?.isDesktop === true;
 
 export async function requestJson<TResponse>(
   path: string,

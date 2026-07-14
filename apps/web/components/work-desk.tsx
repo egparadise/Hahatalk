@@ -16,6 +16,7 @@ import {
   LogOut,
   MessageCircle,
   Mic2,
+  MonitorCog,
   MonitorUp,
   MoreHorizontal,
   PanelRightOpen,
@@ -78,13 +79,27 @@ import {
   type MediaUploadSessionView,
   type MediaUploadSource,
   type MvpSnapshot,
+  type RemoteSupportCapabilities,
+  type RemoteSupportCommandKind,
+  type RemoteSupportScope,
+  type RemoteSupportSessionView,
   type RoomMember,
   type RoomPresentation,
   type TypingUpdate,
   type User,
   type VoiceProfileView
 } from "@hahatalk/contracts";
-import { apiBaseUrl, fetchBinary, getJson, postJson, putBinary, requestJson } from "../lib/api-client";
+import {
+  apiBaseUrl,
+  desktopRemoteSupport,
+  fetchBinary,
+  getJson,
+  isHahaTalkDesktop,
+  postJson,
+  putBinary,
+  requestJson,
+  type DesktopRemoteSupportStatus
+} from "../lib/api-client";
 import { ContactsDesk } from "./contacts-desk";
 import { CalendarDesk } from "./calendar-desk";
 import { MediaPanel, type MediaUploadTaskView } from "./media-panel";
@@ -92,8 +107,9 @@ import { PdfViewer } from "./pdf-viewer";
 import { CallDesk } from "./call-desk";
 import { BroadcastDesk } from "./broadcast-desk";
 import { AiPanel } from "./ai-panel";
+import { RemoteSupportPanel } from "./remote-support-panel";
 
-type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
+type PanelKey = "files" | "pdf" | "reads" | "members" | "ai" | "remote";
 type ReadReportRow = ReturnType<typeof buildReadReport>[number];
 type AuthMode = "activate" | "login" | "invitation";
 type CredentialAuthMode = Exclude<AuthMode, "invitation">;
@@ -673,12 +689,16 @@ function ChatDesk({
   const [aiCapabilities, setAiCapabilities] = useState<AiCapabilityView>();
   const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfileView[]>([]);
   const [isAiAction, setIsAiAction] = useState(false);
+  const [remoteSupportCapabilities, setRemoteSupportCapabilities] = useState<RemoteSupportCapabilities>();
+  const [remoteSupportSessions, setRemoteSupportSessions] = useState<RemoteSupportSessionView[]>([]);
+  const [remoteAgentStatus, setRemoteAgentStatus] = useState<DesktopRemoteSupportStatus>();
+  const [isRemoteSupportAction, setIsRemoteSupportAction] = useState(false);
   const [invitations, setInvitations] = useState<MembershipInvitationView[]>([]);
   const [sessions, setSessions] = useState<DeviceSessionView[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKey>(() => {
     if (typeof window === "undefined") return "files";
     const panel = new URLSearchParams(window.location.search).get("panel");
-    return (["files", "pdf", "reads", "members", "ai"] as PanelKey[]).includes(panel as PanelKey)
+    return (["files", "pdf", "reads", "members", "ai", "remote"] as PanelKey[]).includes(panel as PanelKey)
       ? panel as PanelKey
       : "files";
   });
@@ -775,6 +795,19 @@ function ChatDesk({
   }, [activePanel, currentUser.id]);
 
   useEffect(() => {
+    if (activePanel !== "remote") return;
+    void refreshRemoteSupport(true);
+    const timer = window.setInterval(() => void refreshRemoteSupport(true), 2_000);
+    return () => window.clearInterval(timer);
+  }, [activePanel, activeSpaceId, currentUser.id]);
+
+  useEffect(() => {
+    if (!desktopRemoteSupport) return;
+    void desktopRemoteSupport.status().then(setRemoteAgentStatus).catch(() => undefined);
+    return desktopRemoteSupport.onStatus(setRemoteAgentStatus);
+  }, []);
+
+  useEffect(() => {
     void refreshSnapshot();
   }, [authSession.user.id]);
 
@@ -822,6 +855,9 @@ function ChatDesk({
     socket.on("call:updated", applyCall);
     socket.on("call:recording-updated", ({ sessionId }: { sessionId: string }) => {
       void getJson<CallView>(`/calls/${sessionId}`).then(applyCall).catch(() => undefined);
+    });
+    socket.on("remote-support:updated", (session: RemoteSupportSessionView) => {
+      setRemoteSupportSessions((current) => [session, ...current.filter((candidate) => candidate.id !== session.id)]);
     });
     return () => {
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
@@ -981,6 +1017,19 @@ function ChatDesk({
       setVoiceProfiles(profiles);
     } catch (error) {
       if (!silent) setNotice(`AI 작업 동기화 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
+  async function refreshRemoteSupport(silent = false) {
+    try {
+      const [sessions, capabilities] = await Promise.all([
+        getJson<RemoteSupportSessionView[]>(`/remote-support?spaceId=${encodeURIComponent(activeSpaceIdRef.current)}`),
+        getJson<RemoteSupportCapabilities>("/remote-support/capabilities")
+      ]);
+      setRemoteSupportSessions(sessions);
+      setRemoteSupportCapabilities(capabilities);
+    } catch (error) {
+      if (!silent) setNotice(`원격 지원 동기화 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
     }
   }
 
@@ -1675,6 +1724,116 @@ function ChatDesk({
     }
   }
 
+  async function createRemoteSupport(targetUserId: string, requestedScopes: RemoteSupportScope[]) {
+    if (isRemoteSupportAction || !currentLiveCall) return;
+    setIsRemoteSupportAction(true);
+    try {
+      await postJson<RemoteSupportSessionView>("/remote-support", {
+        callId: currentLiveCall.id,
+        clientRequestId: `remote-support-${crypto.randomUUID()}`,
+        requestedScopes,
+        spaceId: activeSpaceId,
+        targetUserId
+      });
+      await refreshRemoteSupport();
+      setNotice("상대방에게 범위별 원격 지원 동의를 요청했습니다.");
+    } catch (error) {
+      setNotice(`원격 지원 요청 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsRemoteSupportAction(false);
+    }
+  }
+
+  async function decideRemoteSupport(
+    sessionId: string,
+    scope: RemoteSupportScope,
+    decision: "granted" | "denied"
+  ) {
+    if (isRemoteSupportAction || !remoteSupportCapabilities) return;
+    setIsRemoteSupportAction(true);
+    try {
+      await postJson<RemoteSupportSessionView>(`/remote-support/${sessionId}/consents`, {
+        decision,
+        policyVersion: remoteSupportCapabilities.policyVersion,
+        scope
+      });
+      await refreshRemoteSupport();
+      setNotice(decision === "granted" ? "선택한 원격 지원 범위에 동의했습니다." : "원격 지원 요청을 거절했습니다.");
+    } catch (error) {
+      setNotice(`원격 지원 동의 처리 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsRemoteSupportAction(false);
+    }
+  }
+
+  async function activateRemoteSupportAgent(sessionId: string) {
+    if (isRemoteSupportAction || !desktopRemoteSupport) return;
+    setIsRemoteSupportAction(true);
+    try {
+      const activation = await postJson<{
+        activationSecret: string;
+        agentMode: "dry_run" | "signed_native";
+        expiresAt: string;
+        sessionId: string;
+      }>(`/remote-support/${sessionId}/agent-activation`, {});
+      const status = await desktopRemoteSupport.startAgent({
+        activationSecret: activation.activationSecret,
+        sessionId: activation.sessionId
+      });
+      activation.activationSecret = "";
+      setRemoteAgentStatus(status);
+      await refreshRemoteSupport();
+      setNotice(activation.agentMode === "dry_run"
+        ? "원격 지원 안전 검증 에이전트를 시작했습니다. 실제 입력은 발생하지 않습니다."
+        : "서명된 원격 지원 에이전트를 시작했습니다.");
+    } catch (error) {
+      setNotice(`원격 지원 에이전트 시작 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsRemoteSupportAction(false);
+    }
+  }
+
+  async function transitionRemoteSupport(
+    sessionId: string,
+    transition: "pause" | "resume" | "revoke" | "emergency-stop" | "end"
+  ) {
+    if (isRemoteSupportAction) return;
+    setIsRemoteSupportAction(true);
+    try {
+      await requestJson<RemoteSupportSessionView>(`/remote-support/${sessionId}/${transition}`, "POST");
+      if (["pause", "revoke", "emergency-stop", "end"].includes(transition)) {
+        await desktopRemoteSupport?.stopAgent().then(setRemoteAgentStatus).catch(() => undefined);
+      }
+      await refreshRemoteSupport();
+      setNotice(transition === "emergency-stop" ? "원격 지원을 즉시 중지했습니다." : "원격 지원 상태를 변경했습니다.");
+    } catch (error) {
+      setNotice(`원격 지원 상태 변경 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsRemoteSupportAction(false);
+    }
+  }
+
+  async function sendRemoteSupportCommand(
+    sessionId: string,
+    kind: RemoteSupportCommandKind,
+    payload: Record<string, unknown>
+  ) {
+    if (isRemoteSupportAction) return;
+    setIsRemoteSupportAction(true);
+    try {
+      await postJson(`/remote-support/${sessionId}/commands`, {
+        clientCommandId: `remote-command-${crypto.randomUUID()}`,
+        kind,
+        payload
+      });
+      await refreshRemoteSupport(true);
+    } catch (error) {
+      setNotice(`원격 명령 전송 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsRemoteSupportAction(false);
+    }
+  }
+
   async function shareStoredAsset(asset: MediaAssetView) {
     const effectiveAudience = getEffectiveAudience();
     try {
@@ -2165,6 +2324,9 @@ function ChatDesk({
           <button className="panel-tab" data-active={activePanel === "ai"} onClick={() => setActivePanel("ai")} title="AI" type="button">
             <Sparkles size={18} />
           </button>
+          <button className="panel-tab" data-active={activePanel === "remote"} onClick={() => setActivePanel("remote")} title="원격 지원" type="button">
+            <MonitorCog size={18} />
+          </button>
           <button className="panel-tab" onClick={popOut} title="패널 팝업" type="button">
             <MonitorUp size={18} />
           </button>
@@ -2203,6 +2365,21 @@ function ChatDesk({
               selectedAlbumId={selectedAlbumId}
               selectedAssetId={selectedAssetId}
               uploadTask={uploadTask}
+            />
+          ) : activePanel === "remote" ? (
+            <RemoteSupportPanel
+              {...(remoteAgentStatus ? { agentStatus: remoteAgentStatus } : {})}
+              {...(remoteSupportCapabilities ? { capabilities: remoteSupportCapabilities } : {})}
+              {...(currentLiveCall ? { currentCall: currentLiveCall } : {})}
+              isBusy={isRemoteSupportAction}
+              isDesktop={isHahaTalkDesktop}
+              onActivate={(sessionId) => void activateRemoteSupportAgent(sessionId)}
+              onCommand={(sessionId, kind, payload) => void sendRemoteSupportCommand(sessionId, kind, payload)}
+              onCreate={(targetUserId, scopes) => void createRemoteSupport(targetUserId, scopes)}
+              onDecision={(sessionId, scope, decision) => void decideRemoteSupport(sessionId, scope, decision)}
+              onRefresh={() => void refreshRemoteSupport()}
+              onTransition={(sessionId, transition) => void transitionRemoteSupport(sessionId, transition)}
+              sessions={remoteSupportSessions}
             />
           ) : activePanel === "ai" ? (
             <AiPanel

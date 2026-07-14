@@ -30,6 +30,17 @@ export function createOriginPolicy(allowedOrigin: string) {
       return;
     }
 
+    if (
+      request.path.startsWith("/internal/remote-support/")
+      && (
+        request.header("X-HahaTalk-Remote-Agent") === "agent-v1"
+        || Boolean(request.header("X-HahaTalk-Remote-Agent-Token"))
+      )
+    ) {
+      next();
+      return;
+    }
+
     const origin = request.headers.origin;
     const clientHeader = request.header(hahaTalkClientHeader);
     const fetchSite = request.header("Sec-Fetch-Site");

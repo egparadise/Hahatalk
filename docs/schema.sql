@@ -1147,37 +1147,93 @@ alter table media_assets
 
 create table remote_support_sessions (
   id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
   space_id uuid not null references conversation_spaces(id) on delete cascade,
+  call_session_id uuid not null references call_sessions(id) on delete restrict,
   requester_id uuid not null references users(id),
-  supporter_id uuid not null references users(id),
-  target_device_id text not null,
-  engine text not null check (engine in ('meshcentral', 'native_agent')),
+  target_user_id uuid not null references users(id),
+  requested_scopes text[] not null,
+  policy_version text not null default 'hahatalk-remote-support-v1',
+  engine text not null default 'native_agent' check (engine = 'native_agent'),
+  agent_mode text not null default 'dry_run' check (agent_mode in ('dry_run', 'signed_native')),
   status text not null check (status in (
-    'requested', 'view_approved', 'control_approved', 'active', 'paused', 'ended', 'revoked', 'failed'
+    'requested', 'approved', 'active', 'paused', 'ended', 'declined', 'revoked', 'expired', 'failed'
   )),
+  control_epoch bigint not null default 1,
+  next_command_sequence bigint not null default 1,
+  target_device_id text,
   requested_at timestamptz not null default now(),
+  approved_at timestamptz,
   started_at timestamptz,
+  paused_at timestamptz,
+  last_activity_at timestamptz not null default now(),
+  absolute_expires_at timestamptz not null,
+  idle_expires_at timestamptz not null,
   ended_at timestamptz,
-  expires_at timestamptz not null,
-  check (requester_id <> supporter_id)
+  end_reason text,
+  updated_at timestamptz not null default now(),
+  check (requester_id <> target_user_id),
+  check ('screen_view' = any(requested_scopes))
 );
 
 create table remote_support_consents (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references remote_support_sessions(id) on delete cascade,
-  granted_by uuid not null references users(id),
-  capability text not null check (capability in ('screen_view', 'remote_control', 'clipboard', 'file_transfer')),
-  decision text not null check (decision in ('granted', 'denied', 'revoked')),
-  granted_at timestamptz not null default now(),
+  subject_user_id uuid not null references users(id),
+  scope text not null check (scope in ('screen_view', 'remote_control', 'clipboard', 'file_transfer')),
+  decision text not null check (decision in ('pending', 'granted', 'denied', 'revoked')),
+  policy_version text not null,
+  disclosure_digest text not null,
+  created_at timestamptz not null default now(),
+  decided_at timestamptz,
   expires_at timestamptz not null,
   revoked_at timestamptz,
-  unique (session_id, capability, granted_by)
+  unique (session_id, scope)
+);
+
+create table remote_support_agent_credentials (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references remote_support_sessions(id) on delete cascade,
+  target_user_id uuid not null references users(id),
+  credential_kind text not null check (credential_kind in ('activation', 'agent')),
+  token_digest bytea not null unique,
+  control_epoch bigint not null,
+  agent_mode text not null check (agent_mode in ('dry_run', 'signed_native')),
+  agent_instance_id text,
+  status text not null check (status in ('active', 'consumed', 'revoked', 'expired')),
+  issued_at timestamptz not null default now(),
+  used_at timestamptz,
+  last_seen_at timestamptz,
+  expires_at timestamptz not null,
+  revoked_at timestamptz
+);
+
+create table remote_support_commands (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references remote_support_sessions(id) on delete cascade,
+  requested_by uuid not null references users(id),
+  client_command_id text not null,
+  request_hash text not null,
+  control_epoch bigint not null,
+  sequence bigint not null,
+  command_kind text not null check (command_kind in ('pointer_move', 'pointer_button', 'wheel', 'key')),
+  payload_json jsonb not null,
+  status text not null check (status in ('queued', 'claimed', 'executed', 'simulated', 'rejected', 'expired', 'cancelled')),
+  claimed_by uuid references remote_support_agent_credentials(id) on delete set null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  claimed_at timestamptz,
+  completed_at timestamptz,
+  result_code text,
+  unique (session_id, control_epoch, sequence),
+  unique (session_id, requested_by, client_command_id)
 );
 
 create table remote_support_events (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references remote_support_sessions(id) on delete cascade,
   actor_id uuid references users(id),
+  agent_instance_id text,
   event_type text not null,
   metadata_json jsonb not null default '{}',
   created_at timestamptz not null default now()

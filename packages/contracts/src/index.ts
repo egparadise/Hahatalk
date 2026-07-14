@@ -57,6 +57,28 @@ export type ScreenShareStopReason =
   | "track_ended"
   | "publish_failed"
   | "permission_changed";
+export type RemoteSupportScope = "screen_view" | "remote_control" | "clipboard" | "file_transfer";
+export type RemoteSupportStatus =
+  | "requested"
+  | "approved"
+  | "active"
+  | "paused"
+  | "ended"
+  | "declined"
+  | "revoked"
+  | "expired"
+  | "failed";
+export type RemoteSupportConsentDecision = "pending" | "granted" | "denied" | "revoked";
+export type RemoteSupportAgentMode = "dry_run" | "signed_native";
+export type RemoteSupportCommandKind = "pointer_move" | "pointer_button" | "wheel" | "key";
+export type RemoteSupportCommandStatus =
+  | "queued"
+  | "claimed"
+  | "executed"
+  | "simulated"
+  | "rejected"
+  | "expired"
+  | "cancelled";
 export type RecordingStatus =
   | "consent_pending"
   | "consent_denied"
@@ -842,6 +864,128 @@ export interface CallView {
   startedAt?: string;
   endedAt?: string;
   endReason?: string;
+}
+
+export interface RemoteSupportCapabilities {
+  controlPlaneAvailable: true;
+  policyVersion: string;
+  protocolVersion: 1;
+  screenTransport: "livekit";
+  sessionLimits: {
+    absoluteMinutes: number;
+    idleMinutes: number;
+    commandTtlSeconds: number;
+  };
+  scopes: Record<RemoteSupportScope, {
+    available: boolean;
+    consentRequired: true;
+    reason?: string;
+  }>;
+  agent: {
+    available: boolean;
+    mode: RemoteSupportAgentMode;
+    nativeInputAvailable: boolean;
+    signatureRequired: true;
+    reason?: string;
+  };
+}
+
+export interface RemoteSupportConsentView {
+  id: string;
+  scope: RemoteSupportScope;
+  decision: RemoteSupportConsentDecision;
+  policyVersion: string;
+  createdAt: string;
+  decidedAt?: string;
+  expiresAt: string;
+  revokedAt?: string;
+}
+
+export interface RemoteSupportCommandView {
+  id: string;
+  clientCommandId: string;
+  controlEpoch: number;
+  sequence: number;
+  kind: RemoteSupportCommandKind;
+  payload: Record<string, string | number | boolean>;
+  status: RemoteSupportCommandStatus;
+  createdAt: string;
+  expiresAt: string;
+  completedAt?: string;
+  resultCode?: string;
+}
+
+export interface RemoteSupportSessionView {
+  id: string;
+  spaceId: string;
+  callId: string;
+  requester: Pick<User, "id" | "displayName" | "character">;
+  target: Pick<User, "id" | "displayName" | "character">;
+  requestedScopes: RemoteSupportScope[];
+  consents: RemoteSupportConsentView[];
+  status: RemoteSupportStatus;
+  agentMode: RemoteSupportAgentMode;
+  agentOnline: boolean;
+  controlEpoch: number;
+  isRequester: boolean;
+  isTarget: boolean;
+  canRespond: boolean;
+  canActivateAgent: boolean;
+  canPause: boolean;
+  canResume: boolean;
+  canSendCommands: boolean;
+  canEnd: boolean;
+  requestedAt: string;
+  approvedAt?: string;
+  startedAt?: string;
+  pausedAt?: string;
+  lastActivityAt: string;
+  absoluteExpiresAt: string;
+  idleExpiresAt: string;
+  endedAt?: string;
+  endReason?: string;
+  latestCommand?: RemoteSupportCommandView;
+}
+
+export interface CreateRemoteSupportInput {
+  clientRequestId: string;
+  spaceId: string;
+  callId: string;
+  targetUserId: string;
+  requestedScopes: RemoteSupportScope[];
+}
+
+export interface DecideRemoteSupportConsentInput {
+  scope: RemoteSupportScope;
+  decision: Extract<RemoteSupportConsentDecision, "granted" | "denied">;
+  policyVersion: string;
+}
+
+export type RemoteSupportCommandInput =
+  | { clientCommandId: string; kind: "pointer_move"; payload: { x: number; y: number } }
+  | { clientCommandId: string; kind: "pointer_button"; payload: { action: "click" | "down" | "up"; button: "left" | "middle" | "right"; x?: number; y?: number } }
+  | { clientCommandId: string; kind: "wheel"; payload: { deltaX: number; deltaY: number } }
+  | { clientCommandId: string; kind: "key"; payload: { action: "press" | "down" | "up"; code: string } };
+
+export interface RemoteSupportAgentActivationView {
+  sessionId: string;
+  activationSecret: string;
+  expiresAt: string;
+  agentMode: RemoteSupportAgentMode;
+}
+
+export interface RemoteSupportAgentCredentialView {
+  sessionId: string;
+  agentToken: string;
+  expiresAt: string;
+  controlEpoch: number;
+  agentMode: RemoteSupportAgentMode;
+}
+
+export interface RemoteSupportAgentPollView {
+  sessionStatus: RemoteSupportStatus;
+  controlEpoch: number;
+  commands: RemoteSupportCommandView[];
 }
 
 export interface StartCallInput {

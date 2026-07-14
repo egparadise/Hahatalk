@@ -19,8 +19,11 @@ $required = @(
   "packages/contracts/src/index.ts",
   "apps/web/components/work-desk.tsx",
   "apps/web/components/broadcast-desk.tsx",
+  "apps/web/components/remote-support-panel.tsx",
   "apps/api/src/main.ts",
-  "apps/desktop/main.cjs"
+  "apps/api/src/remote-support/remote-support.service.ts",
+  "apps/desktop/main.cjs",
+  "apps/desktop/remote-support-agent.cjs"
 )
 
 foreach ($path in $required) {
@@ -53,6 +56,9 @@ Invoke-CheckedCommand -Command @("npm", "test")
 Invoke-CheckedCommand -Command @("npm", "run", "schema:check")
 Invoke-CheckedCommand -Command @("npm", "run", "media-infra:check")
 Invoke-CheckedCommand -Command @("npm", "run", "desktop:check")
+if ($env:OS -eq "Windows_NT") {
+  Invoke-CheckedCommand -Command @("npm", "run", "desktop:remote-agent-process-smoke")
+}
 Invoke-CheckedCommand -Command @("npm", "run", "build")
 if ($env:OS -eq "Windows_NT" -and [string]::IsNullOrWhiteSpace($env:DATABASE_URL)) {
   Invoke-CheckedCommand -Command @(
@@ -77,6 +83,7 @@ if ($env:OS -eq "Windows_NT") {
   Invoke-CheckedCommand -Command @("npm", "run", "broadcasts:integration")
 }
 Invoke-CheckedCommand -Command @("npm", "run", "ai:integration")
+Invoke-CheckedCommand -Command @("npm", "run", "remote-support:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
 
 $verificationDir = Join-Path $root "node_modules\.cache"
