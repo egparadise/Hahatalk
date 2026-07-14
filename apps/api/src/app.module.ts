@@ -11,6 +11,7 @@ import { CallsModule } from "./calls/calls.module.js";
 import { MeetingsModule } from "./meetings/meetings.module.js";
 import { RecordingsModule } from "./recordings/recordings.module.js";
 import { BroadcastsModule } from "./broadcasts/broadcasts.module.js";
+import { AiModule } from "./ai/ai.module.js";
 
 @Module({
   imports: [
@@ -25,7 +26,8 @@ import { BroadcastsModule } from "./broadcasts/broadcasts.module.js";
     RecordingsModule,
     CallsModule,
     MeetingsModule,
-    BroadcastsModule
+    BroadcastsModule,
+    AiModule
   ]
 })
 export class AppModule {}

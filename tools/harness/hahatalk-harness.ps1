@@ -76,6 +76,7 @@ if ($env:OS -eq "Windows_NT") {
   Invoke-CheckedCommand -Command @("npm", "run", "recording:integration")
   Invoke-CheckedCommand -Command @("npm", "run", "broadcasts:integration")
 }
+Invoke-CheckedCommand -Command @("npm", "run", "ai:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "smoke")
 
 $verificationDir = Join-Path $root "node_modules\.cache"

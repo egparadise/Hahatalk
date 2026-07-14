@@ -14,6 +14,7 @@ import { objectStoreToken } from "./object-store.js";
     { provide: objectStoreToken, useExisting: LocalObjectStore },
     MediaInspector,
     MediaService
-  ]
+  ],
+  exports: [MediaInspector, MediaService, objectStoreToken]
 })
 export class MediaModule {}

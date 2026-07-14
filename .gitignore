@@ -12,6 +12,8 @@ coverage/
 !.env.example
 media-recordings/
 model-weights/
+__pycache__/
+*.py[cod]
 uploads/
 apps/desktop/runtime/
 apps/desktop/assets/*.ico

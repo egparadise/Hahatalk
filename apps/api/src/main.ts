@@ -13,7 +13,15 @@ async function bootstrap() {
   app.useBodyParser("json", { type: ["application/json", "application/webhook+json"] });
 
   app.enableCors({
-    allowedHeaders: ["Content-Type", "X-HahaTalk-Part-Sha256", hahaTalkClientHeader],
+    allowedHeaders: [
+      "Content-Type",
+      "X-HahaTalk-Part-Sha256",
+      "X-HahaTalk-AI-Worker-Token",
+      "X-HahaTalk-AI-Worker-Id",
+      "X-HahaTalk-AI-Fencing-Token",
+      "X-HahaTalk-File-Name",
+      hahaTalkClientHeader
+    ],
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     origin: webOrigin

@@ -1,6 +1,6 @@
 # HahaTalk / 인비즈톡
 
-HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups, an owner-centered private hub, and personal broadcasting. It runs as a PC web MVP and as a self-starting Windows Electron application with an embedded NestJS API; Android and iOS clients are staged after the persisted conversation API.
+HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups, an owner-centered private hub, personal broadcasting, and a consent-aware AI workbench. It runs as a PC web MVP and as a self-starting Windows Electron application with an embedded NestJS API; Android and iOS clients are staged after the persisted conversation API.
 
 ## What Runs Today
 
@@ -36,7 +36,9 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Durable screen capture archive/share flow for PC browsers/desktops that support `getDisplayMedia`.
 - Read report panel with read time, unread users, and confirmation state.
 - Pop-out window affordances for chat and document views.
-- Async AI/STT/TTS placeholders that do not block chat.
+- PostgreSQL-backed AI jobs with lease, heartbeat, fencing, idempotency, retry/cancel, attempt history, and optional opaque Redis Streams wake-ups; chat never waits for a model or worker.
+- A Windows AI workbench for faster-whisper STT drafts, visibility-scoped Qwen 3.5+ summaries, Qwen3-TTS Sohee playback, consented voice profiles, and AI-labeled avatar assets.
+- Editable STT review and explicit one-time approval before a normal Smart Room message is sent, plus immediate voice-consent revoke and derivative deletion queues.
 - A Windows x64 package and Squirrel installer that include a managed PostgreSQL 18.4 runtime and start without Node.js, npm, Docker, or separate development servers.
 - Single-instance protection, dynamic loopback ports, runtime health evidence, secure navigation, and clean API shutdown.
 
@@ -70,6 +72,7 @@ npm run meetings:integration
 npm run screen-share:integration
 npm run recording:integration
 npm run broadcasts:integration
+npm run ai:integration
 npm run media-infra:check
 # Requires a healthy Docker Linux engine and performs a real Room Composite MP4 test:
 npm run media-infra:smoke
@@ -80,6 +83,7 @@ npm run desktop:broadcast-renderer-smoke
 npm run desktop:stage6d-renderer-smoke
 npm run desktop:stage6e-renderer-smoke
 npm run desktop:stage7-renderer-smoke
+npm run desktop:stage8-renderer-smoke
 npm run harness
 ```
 
@@ -127,4 +131,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-6e-recording-consent-egress.md`: Stage 6E unanimous recording consent, Egress/storage boundary, signed webhook, fail-closed lifecycle, PC UX, and verification contract.
 - `docs/stage-6f-trusted-media-infrastructure.md`: Stage 6F trusted deployment manifest, shared Redis/Egress, private storage, retention, and real-MP4 infrastructure gate.
 - `docs/stage-7-personal-broadcast.md`: Stage 7 channel subscription boundary, hidden viewers, moderated Q&A, live roles, replay gate, PC UX, and installed-renderer verification contract.
+- `docs/stage-8-ai-voice-workbench.md`: Stage 8 durable jobs, worker leases, STT review, scoped summaries, Korean TTS, consented voice/avatar processing, and installed-renderer verification contract.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

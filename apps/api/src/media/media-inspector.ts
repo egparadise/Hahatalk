@@ -94,6 +94,12 @@ export class MediaInspector {
     const detectedFileType = await fileTypeFromBuffer(content);
     let detected = normalizeMime(detectedFileType?.mime ?? "application/octet-stream");
 
+    // WebM has one container signature for audio-only and video files. Preserve the
+    // browser's audio declaration so microphone recordings remain audio assets.
+    if (extension === ".webm" && declared.startsWith("audio/") && detected === "video/webm") {
+      detected = "audio/webm";
+    }
+
     if (textExtensions.has(extension) && !head.includes(0)) {
       detected = extension === ".json" ? "application/json" : "text/plain";
     }

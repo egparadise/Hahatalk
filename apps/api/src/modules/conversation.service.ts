@@ -9,7 +9,6 @@ import {
 import {
   buildReadReport,
   createMessageDeliveryPlan,
-  demoAiJobs,
   findCharacterPreset,
   getRoomPresentationForViewer,
   projectMessageForViewer,
@@ -210,11 +209,10 @@ export class ConversationService {
     }
     const view = await this.conversationView(principal, selectedSpaceId, before, limit);
     const organization = await this.organization(principal.state.user.organizationId);
-    const isOwner = view.room.ownerId === principal.state.user.id;
     return {
       organization,
       ...view,
-      aiJobs: isOwner ? demoAiJobs : demoAiJobs.filter((job) => job.requestedBy === principal.state.user.id),
+      aiJobs: [],
       invites: [],
       spaces
     };
@@ -321,7 +319,11 @@ export class ConversationService {
     });
   }
 
-  async sendMessage(principal: AuthPrincipal, input: SendConversationMessageInput) {
+  async sendMessage(
+    principal: AuthPrincipal,
+    input: SendConversationMessageInput,
+    trustedMetadata: Record<string, boolean | string> = {}
+  ) {
     if (!isUuid(input.spaceId)) {
       throw new BadRequestException("Conversation id is invalid.");
     }
@@ -343,7 +345,8 @@ export class ConversationService {
       requiresConfirmation: Boolean(input.requiresConfirmation),
       spaceId: input.spaceId,
       targetRole: input.targetRole ?? null,
-      targetUserIds: normalizedTargets
+      targetUserIds: normalizedTargets,
+      trustedMetadata
     });
 
     const result = await this.database.transaction(async (client) => {
@@ -420,7 +423,10 @@ export class ConversationService {
           input.parentMessageId ?? null,
           plan.deliveryMode,
           body,
-          JSON.stringify(input.requiresConfirmation ? { requiresConfirmation: true } : {}),
+          JSON.stringify({
+            ...(input.requiresConfirmation ? { requiresConfirmation: true } : {}),
+            ...trustedMetadata
+          }),
           createdAt
         ]
       );

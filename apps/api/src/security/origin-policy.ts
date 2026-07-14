@@ -22,6 +22,14 @@ export function createOriginPolicy(allowedOrigin: string) {
       return;
     }
 
+    if (
+      request.path.startsWith("/internal/ai/")
+      && Boolean(request.header("X-HahaTalk-AI-Worker-Token"))
+    ) {
+      next();
+      return;
+    }
+
     const origin = request.headers.origin;
     const clientHeader = request.header(hahaTalkClientHeader);
     const fetchSite = request.header("Sec-Fetch-Site");

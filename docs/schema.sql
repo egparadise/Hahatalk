@@ -349,7 +349,8 @@ create table media_upload_sessions (
   expected_sha256_hex text check (expected_sha256_hex is null or expected_sha256_hex ~ '^[0-9a-f]{64}$'),
   part_size_bytes integer not null check (part_size_bytes between 262144 and 8388608),
   part_count integer not null check (part_count between 1 and 400),
-  source text not null check (source in ('file_upload', 'screen_capture')),
+  source text not null check (source in ('file_upload', 'screen_capture', 'ai_generated')),
+  generated_by_job_id uuid,
   status text not null check (status in ('initiated', 'uploading', 'completing', 'completed', 'aborted', 'expired', 'failed')),
   completed_asset_id uuid,
   failure_code text,
@@ -951,43 +952,58 @@ create table broadcast_events (
   created_at timestamptz not null default now()
 );
 
-create table avatar_profiles (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id) on delete cascade,
-  source_asset_id uuid references media_assets(id) on delete set null,
-  display_asset_id uuid references media_assets(id) on delete set null,
-  avatar_type text not null check (avatar_type in ('preset', 'photo', 'caricature', 'animated_2d', 'animated_3d')),
-  animation_profile_json jsonb not null default '{}',
-  consent_to_store_source boolean not null default false,
-  selected_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
 create table ai_model_configs (
   id uuid primary key default gen_random_uuid(),
-  capability text not null check (capability in ('assistant', 'summary', 'stt', 'tts', 'avatar', 'moderation')),
+  capability text not null check (capability in (
+    'assistant', 'summary', 'stt', 'tts_standard', 'tts_voice_profile', 'avatar'
+  )),
   provider text not null,
+  model_family text not null,
   model_name text not null,
   minimum_version text,
   deployment_mode text not null check (deployment_mode in ('local', 'private_server', 'managed_api')),
   settings_json jsonb not null default '{}',
   enabled boolean not null default true,
   created_at timestamptz not null default now(),
-  unique (capability, provider, model_name)
+  updated_at timestamptz not null default now(),
+  unique (capability, provider, model_name),
+  check (
+    capability not in ('assistant', 'summary')
+    or (model_family = 'qwen' and minimum_version in ('3.5', '3.6'))
+  )
+);
+
+create table ai_workers (
+  worker_id text primary key,
+  capabilities text[] not null,
+  protocol_version integer not null default 1 check (protocol_version = 1),
+  metadata_json jsonb not null default '{}',
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
 );
 
 create table ai_jobs (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid references organizations(id) on delete cascade,
-  requested_by uuid not null references users(id),
-  model_config_id uuid references ai_model_configs(id),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  requested_by uuid not null references users(id) on delete cascade,
+  model_config_id uuid not null references ai_model_configs(id),
   job_type text not null check (job_type in (
-    'stt', 'tts', 'summary', 'avatar_generation', 'transcript', 'search_index', 'media_metadata'
+    'stt', 'tts', 'summary', 'avatar_generation',
+    'voice_profile_enrollment', 'voice_profile_delete'
   )),
-  input_asset_id uuid references media_assets(id),
+  input_asset_id uuid references media_assets(id) on delete restrict,
+  space_id uuid references conversation_spaces(id) on delete cascade,
   idempotency_key text not null,
-  status text not null check (status in ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
-  attempt_count integer not null default 0,
+  request_hash text not null,
+  status text not null default 'queued' check (status in ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+  priority smallint not null default 50 check (priority between 0 and 100),
+  attempt_count integer not null default 0 check (attempt_count >= 0),
+  max_attempts integer not null default 3 check (max_attempts between 1 and 10),
+  fencing_token bigint not null default 0,
+  lease_owner text references ai_workers(worker_id) on delete set null,
+  lease_expires_at timestamptz,
+  progress smallint not null default 0 check (progress between 0 and 100),
+  input_json jsonb not null default '{}',
   result_json jsonb,
   error_code text,
   error_message text,
@@ -995,52 +1011,139 @@ create table ai_jobs (
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
-  unique (requested_by, idempotency_key)
+  cancelled_at timestamptz,
+  unique (requested_by, idempotency_key),
+  check (
+    (status = 'running' and lease_owner is not null and lease_expires_at is not null)
+    or (status <> 'running' and lease_owner is null and lease_expires_at is null)
+  )
 );
 
-create index ai_jobs_worker_idx on ai_jobs(status, available_at, created_at) where status in ('queued', 'failed');
+create index ai_jobs_worker_idx on ai_jobs(status, available_at, priority desc, created_at, id)
+  where status in ('queued', 'running');
+create index ai_jobs_requester_idx on ai_jobs(requested_by, created_at desc, id desc);
+
+create table ai_job_attempts (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references ai_jobs(id) on delete cascade,
+  attempt_number integer not null check (attempt_number > 0),
+  fencing_token bigint not null check (fencing_token > 0),
+  worker_id text not null,
+  status text not null check (status in ('running', 'succeeded', 'failed', 'timed_out', 'cancelled')),
+  error_code text,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  unique (job_id, attempt_number),
+  unique (job_id, fencing_token)
+);
+
+create table ai_job_dispatches (
+  id bigserial primary key,
+  job_id uuid not null references ai_jobs(id) on delete cascade,
+  transport text not null check (transport in ('redis_stream', 'database_poll')),
+  status text not null check (status in ('pending', 'published', 'failed')),
+  attempt_count integer not null default 0,
+  last_error_code text,
+  created_at timestamptz not null default now(),
+  published_at timestamptz
+);
+
+create index ai_job_dispatches_pending_idx on ai_job_dispatches(created_at, id)
+  where status in ('pending', 'failed');
+
+create table ai_summary_inputs (
+  job_id uuid not null references ai_jobs(id) on delete cascade,
+  message_id uuid not null references messages(id) on delete cascade,
+  position integer not null check (position >= 0),
+  primary key (job_id, message_id),
+  unique (job_id, position)
+);
 
 create table voice_transcripts (
   id uuid primary key default gen_random_uuid(),
   ai_job_id uuid not null unique references ai_jobs(id) on delete cascade,
-  source_type text not null check (source_type in ('voice_message', 'call', 'broadcast', 'uploaded_media')),
-  source_id uuid not null,
+  source_asset_id uuid not null references media_assets(id) on delete restrict,
   language text not null,
-  text text not null,
+  draft_text text not null,
+  edited_text text,
   segments_json jsonb not null default '[]',
-  review_status text not null check (review_status in ('ai_draft', 'reviewed', 'rejected')),
+  review_status text not null check (review_status in ('ai_draft', 'sending', 'reviewed', 'rejected')),
   reviewed_by uuid references users(id),
   reviewed_at timestamptz,
-  created_at timestamptz not null default now()
+  send_client_message_id text,
+  approved_message_id uuid unique references messages(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table voice_profile_consents (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  subject_user_id uuid not null references users(id) on delete cascade,
+  reference_asset_id uuid not null references media_assets(id) on delete restrict,
+  purpose text not null check (purpose in ('personal_tts')),
+  policy_version text not null,
+  disclosure_version text not null,
+  consent_digest text not null,
+  status text not null check (status in ('active', 'revoked', 'expired')),
+  granted_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  revoked_at timestamptz
 );
 
 create table voice_profiles (
   id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
   subject_user_id uuid not null references users(id) on delete cascade,
   created_by uuid not null references users(id),
-  reference_asset_id uuid not null references media_assets(id),
+  reference_asset_id uuid not null references media_assets(id) on delete restrict,
   model_config_id uuid not null references ai_model_configs(id),
+  consent_id uuid not null unique references voice_profile_consents(id) on delete restrict,
+  enrollment_job_id uuid unique references ai_jobs(id) on delete set null,
   encrypted_embedding_key text,
-  consent_record_id uuid not null references consent_records(id),
-  status text not null check (status in ('pending_consent', 'active', 'revoked', 'deleted')),
+  status text not null check (status in ('pending', 'active', 'revoked', 'deleting', 'deleted')),
   watermark_required boolean not null default true,
   created_at timestamptz not null default now(),
-  revoked_at timestamptz
+  activated_at timestamptz,
+  revoked_at timestamptz,
+  deleted_at timestamptz
 );
 
 create table tts_assets (
   id uuid primary key default gen_random_uuid(),
-  requested_by uuid not null references users(id),
-  voice_profile_id uuid references voice_profiles(id),
+  ai_job_id uuid not null unique references ai_jobs(id) on delete cascade,
+  requested_by uuid not null references users(id) on delete cascade,
+  voice_profile_id uuid references voice_profiles(id) on delete restrict,
   model_config_id uuid not null references ai_model_configs(id),
   text_hash text not null,
   settings_hash text not null,
-  storage_key text not null unique,
+  media_asset_id uuid not null unique references media_assets(id) on delete restrict,
   duration_ms integer,
   watermarked boolean not null default false,
   created_at timestamptz not null default now(),
-  unique (text_hash, settings_hash, voice_profile_id, model_config_id)
+  unique nulls not distinct (requested_by, text_hash, settings_hash, voice_profile_id, model_config_id)
 );
+
+create table avatar_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  source_asset_id uuid references media_assets(id) on delete set null,
+  display_asset_id uuid references media_assets(id) on delete set null,
+  generation_job_id uuid unique references ai_jobs(id) on delete set null,
+  avatar_type text not null check (avatar_type in ('preset', 'photo', 'caricature', 'animated_2d')),
+  style text not null default 'work-friendly',
+  animation_profile_json jsonb not null default '{}',
+  ai_generated boolean not null default false,
+  consent_to_store_source boolean not null default false,
+  status text not null check (status in ('pending', 'active', 'rejected', 'deleted')),
+  selected_at timestamptz,
+  created_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+alter table media_assets
+  add constraint media_assets_generated_job_fk
+  foreign key (generated_by_job_id) references ai_jobs(id) on delete set null;
 
 create table remote_support_sessions (
   id uuid primary key default gen_random_uuid(),

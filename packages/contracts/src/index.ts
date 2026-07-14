@@ -23,16 +23,15 @@ export type AiJobType =
   | "tts"
   | "summary"
   | "avatar_generation"
-  | "transcript"
-  | "search_index"
-  | "media_metadata";
+  | "voice_profile_enrollment"
+  | "voice_profile_delete";
 export type AiJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type AttachmentPreviewStatus = "queued" | "ready" | "unavailable" | "failed";
 export type VirusScanStatus = "pending" | "clean" | "blocked" | "failed";
 export type MediaArchiveScope = "private_archive" | "shared" | "selected";
 export type MediaKind = "image" | "video" | "audio" | "pdf" | "text" | "office" | "file";
 export type MediaProcessingStatus = "processing" | "ready" | "blocked" | "failed";
-export type MediaUploadSource = "file_upload" | "screen_capture";
+export type MediaUploadSource = "file_upload" | "screen_capture" | "ai_generated";
 export type MediaUploadStatus = "initiated" | "uploading" | "completing" | "completed" | "aborted" | "expired" | "failed";
 export type ApprovalPolicy = "owner_and_invitee" | "admins_and_invitee" | "all_members_and_invitee" | "quorum_and_invitee";
 export type InvitationStatus = "pending_approval" | "sent" | "accepted" | "declined" | "expired" | "revoked";
@@ -565,10 +564,100 @@ export interface AiJob {
   requestedBy: string;
   jobType: AiJobType;
   status: AiJobStatus;
+  model: {
+    capability: string;
+    deploymentMode: "local" | "private_server" | "managed_api";
+    name: string;
+    provider: string;
+  };
+  attemptCount: number;
+  maxAttempts: number;
+  progress: number;
+  inputAssetId?: string;
+  spaceId?: string;
+  transcript?: VoiceTranscriptView;
+  resultJson?: Record<string, unknown>;
   result?: string;
+  errorCode?: string;
   errorMessage?: string;
   createdAt: string;
+  startedAt?: string;
   completedAt?: string;
+}
+
+export interface AiCapabilityView {
+  chatIndependent: true;
+  durableQueue: true;
+  redisDispatch: "configured" | "database_poll";
+  protocolVersion: 1;
+  activeWorkers: Array<{
+    workerId: string;
+    capabilities: string[];
+    lastSeenAt: string;
+  }>;
+  models: Array<{
+    capability: string;
+    deploymentMode: "local" | "private_server" | "managed_api";
+    enabled: boolean;
+    modelFamily: string;
+    name: string;
+    provider: string;
+  }>;
+}
+
+export interface VoiceTranscriptView {
+  id: string;
+  aiJobId: string;
+  sourceAssetId: string;
+  language: string;
+  draftText: string;
+  editedText?: string;
+  reviewStatus: "ai_draft" | "sending" | "reviewed" | "rejected";
+  approvedMessageId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiSummaryResult {
+  aiGenerated: true;
+  summary: string;
+  decisions: string[];
+  tasks: Array<{ assignee?: string; title: string }>;
+}
+
+export interface VoiceProfileConsentView {
+  id: string;
+  referenceAssetId: string;
+  purpose: "personal_tts";
+  policyVersion: string;
+  status: "active" | "revoked" | "expired";
+  grantedAt: string;
+  expiresAt: string;
+  revokedAt?: string;
+}
+
+export interface VoiceProfileView {
+  id: string;
+  referenceAssetId: string;
+  consentId: string;
+  modelName: string;
+  status: "pending" | "active" | "revoked" | "deleting" | "deleted";
+  watermarkRequired: true;
+  createdAt: string;
+  revokedAt?: string;
+  deletedAt?: string;
+}
+
+export interface AvatarProfileView {
+  id: string;
+  sourceAssetId?: string;
+  displayAssetId?: string;
+  avatarType: "preset" | "photo" | "caricature" | "animated_2d";
+  style: string;
+  aiGenerated: boolean;
+  consentToStoreSource: boolean;
+  status: "pending" | "active" | "rejected" | "deleted";
+  createdAt: string;
 }
 
 export interface AuditLog {
@@ -1655,6 +1744,10 @@ export const demoAiJobs: AiJob[] = [
     requestedBy: "user-you",
     jobType: "summary",
     status: "queued",
+    model: { capability: "summary", deploymentMode: "local", name: "Qwen3.5-4B", provider: "qwen" },
+    attemptCount: 0,
+    maxAttempts: 3,
+    progress: 0,
     createdAt: "2026-07-09T10:09:00+09:00",
     result: "회의록 초안은 채팅을 막지 않고 백그라운드에서 생성됩니다."
   },
@@ -1664,6 +1757,10 @@ export const demoAiJobs: AiJob[] = [
     requestedBy: "user-mina",
     jobType: "stt",
     status: "running",
+    model: { capability: "stt", deploymentMode: "local", name: "large-v3-turbo", provider: "faster-whisper" },
+    attemptCount: 1,
+    maxAttempts: 3,
+    progress: 35,
     createdAt: "2026-07-09T10:10:00+09:00"
   }
 ];

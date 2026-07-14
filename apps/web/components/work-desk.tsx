@@ -13,7 +13,6 @@ import {
   Image as ImageIcon,
   Inbox,
   KeyRound,
-  LockKeyhole,
   LogOut,
   MessageCircle,
   Mic2,
@@ -47,7 +46,6 @@ import {
   characterPresets,
   createMessageAudience,
   createMessageDeliveryPlan,
-  demoAiJobs,
   demoMessages,
   demoRoom,
   demoRoomMembers,
@@ -57,6 +55,7 @@ import {
   isMessageVisibleTo,
   projectMessageForViewer,
   type ApprovalPolicy,
+  type AiCapabilityView,
   type AuthSession,
   type AiJob,
   type Attachment,
@@ -82,7 +81,8 @@ import {
   type RoomMember,
   type RoomPresentation,
   type TypingUpdate,
-  type User
+  type User,
+  type VoiceProfileView
 } from "@hahatalk/contracts";
 import { apiBaseUrl, fetchBinary, getJson, postJson, putBinary, requestJson } from "../lib/api-client";
 import { ContactsDesk } from "./contacts-desk";
@@ -91,6 +91,7 @@ import { MediaPanel, type MediaUploadTaskView } from "./media-panel";
 import { PdfViewer } from "./pdf-viewer";
 import { CallDesk } from "./call-desk";
 import { BroadcastDesk } from "./broadcast-desk";
+import { AiPanel } from "./ai-panel";
 
 type PanelKey = "files" | "pdf" | "reads" | "members" | "ai";
 type ReadReportRow = ReturnType<typeof buildReadReport>[number];
@@ -668,7 +669,10 @@ function ChatDesk({
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [nextMessageCursor, setNextMessageCursor] = useState<string | undefined>();
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
-  const [aiJobs, setAiJobs] = useState<AiJob[]>(demoAiJobs);
+  const [aiJobs, setAiJobs] = useState<AiJob[]>([]);
+  const [aiCapabilities, setAiCapabilities] = useState<AiCapabilityView>();
+  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfileView[]>([]);
+  const [isAiAction, setIsAiAction] = useState(false);
   const [invitations, setInvitations] = useState<MembershipInvitationView[]>([]);
   const [sessions, setSessions] = useState<DeviceSessionView[]>([]);
   const [activePanel, setActivePanel] = useState<PanelKey>(() => {
@@ -720,7 +724,11 @@ function ChatDesk({
   const [albumName, setAlbumName] = useState("");
   const [selectedAlbumId, setSelectedAlbumId] = useState("");
   const [uploadTask, setUploadTask] = useState<MediaUploadTaskView>({ fileName: "", progress: 0, status: "idle" });
-  const [retryUpload, setRetryUpload] = useState<{ file: File; source: MediaUploadSource } | null>(null);
+  const [retryUpload, setRetryUpload] = useState<{
+    file: File;
+    options?: { archiveOnly?: boolean; keepPanel?: PanelKey };
+    source: MediaUploadSource;
+  } | null>(null);
   const [isConfirmingRead, setIsConfirmingRead] = useState(false);
   const [readReportRows, setReadReportRows] = useState<ReadReportRow[] | undefined>();
   const [callCapabilities, setCallCapabilities] = useState<CallCapabilities>({
@@ -758,6 +766,13 @@ function ChatDesk({
     setMediaPlaceDraft(selected?.placeName ?? "");
     setMediaCapturedDraft(selected?.capturedAt?.slice(0, 19) ?? "");
   }, [mediaLibrary.assets, selectedAssetId]);
+
+  useEffect(() => {
+    if (activePanel !== "ai") return;
+    void refreshAiWorkbench(true);
+    const timer = window.setInterval(() => void refreshAiWorkbench(true), 2_500);
+    return () => window.clearInterval(timer);
+  }, [activePanel, currentUser.id]);
 
   useEffect(() => {
     void refreshSnapshot();
@@ -954,6 +969,21 @@ function ChatDesk({
     }
   }
 
+  async function refreshAiWorkbench(silent = false) {
+    try {
+      const [jobs, capabilities, profiles] = await Promise.all([
+        getJson<AiJob[]>("/ai/jobs"),
+        getJson<AiCapabilityView>("/ai/capabilities"),
+        getJson<VoiceProfileView[]>("/ai/voice-profiles")
+      ]);
+      setAiJobs(jobs);
+      setAiCapabilities(capabilities);
+      setVoiceProfiles(profiles);
+    } catch (error) {
+      if (!silent) setNotice(`AI 작업 동기화 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    }
+  }
+
   async function refreshSnapshot() {
     setIsSyncing(true);
     setSyncError("");
@@ -969,7 +999,6 @@ function ChatDesk({
       ]);
       applyConversationView(snapshot);
       setSpaces(snapshot.spaces ?? []);
-      setAiJobs(snapshot.aiJobs);
       setInvitations(invitationRows);
       setSessions(sessionRows);
       setMediaLibrary(library);
@@ -1358,16 +1387,20 @@ function ChatDesk({
     }
   }
 
-  async function uploadMedia(file: File, source: MediaUploadSource) {
+  async function uploadMedia(
+    file: File,
+    source: MediaUploadSource,
+    options?: { archiveOnly?: boolean; keepPanel?: PanelKey }
+  ): Promise<MediaAssetView | undefined> {
     if (isUploading) return;
     const controller = new AbortController();
     const effectiveAudience = getEffectiveAudience();
     uploadAbortRef.current = controller;
     uploadIdRef.current = "";
-    setRetryUpload({ file, source });
+    setRetryUpload({ file, source, ...(options ? { options } : {}) });
     setIsUploading(true);
     setUploadTask({ fileName: file.name, progress: 0, status: "hashing" });
-    setActivePanel("files");
+    setActivePanel(options?.keepPanel ?? "files");
     try {
       const sha256Hex = await sha256Blob(file);
       if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -1409,7 +1442,7 @@ function ChatDesk({
         setNotice(`${file.name} 파일은 보안 검사에서 격리되었습니다.`);
         return;
       }
-      if (mediaMode === "share") {
+      if (mediaMode === "share" && !options?.archiveOnly) {
         const result = await postJson<{ message: Message; replay: boolean }>(`/media/assets/${asset.id}/share`, {
           archiveScope: effectiveAudience.audienceType === "all" ? "shared" : "selected",
           audienceType: effectiveAudience.audienceType,
@@ -1425,8 +1458,9 @@ function ChatDesk({
         setNotice(`${file.name} 파일을 내 보관함에 저장했습니다.`);
       }
       setUploadTask({ fileName: file.name, progress: 100, status: "done" });
-      if (file.type === "application/pdf") setActivePanel("pdf");
+      if (file.type === "application/pdf" && !options?.keepPanel) setActivePanel("pdf");
       await refreshMediaLibrary();
+      return asset;
     } catch (error) {
       const aborted = controller.signal.aborted;
       setUploadTask({
@@ -1451,7 +1485,194 @@ function ChatDesk({
   }
 
   async function retryMediaUpload() {
-    if (retryUpload) await uploadMedia(retryUpload.file, retryUpload.source);
+    if (retryUpload) await uploadMedia(retryUpload.file, retryUpload.source, retryUpload.options);
+  }
+
+  async function createSttFromVoice(file: File) {
+    if (isAiAction || isUploading) return;
+    setIsAiAction(true);
+    try {
+      const asset = await uploadMedia(file, "file_upload", { archiveOnly: true, keepPanel: "ai" });
+      if (!asset || asset.processingStatus !== "ready" || asset.mediaKind !== "audio") {
+        throw new Error("검사에 통과한 음성 파일만 STT에 사용할 수 있습니다.");
+      }
+      await postJson<AiJob>("/ai/jobs/stt", {
+        assetId: asset.id,
+        idempotencyKey: `stt-${crypto.randomUUID()}`,
+        language: "auto"
+      });
+      await refreshAiWorkbench();
+      setNotice("음성을 안전하게 저장하고 STT 초안 작업을 대기열에 넣었습니다.");
+    } catch (error) {
+      setNotice(`STT 요청 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsAiAction(false);
+      setActivePanel("ai");
+    }
+  }
+
+  async function createAiSummary() {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      await postJson<AiJob>("/ai/jobs/summary", {
+        idempotencyKey: `summary-${crypto.randomUUID()}`,
+        spaceId: activeSpaceId
+      });
+      await refreshAiWorkbench();
+      setNotice("내가 볼 수 있는 현재 대화만 고정해 요약을 요청했습니다.");
+    } catch (error) {
+      setNotice(`대화 요약 요청 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsAiAction(false);
+    }
+  }
+
+  async function createAiTts(text: string) {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      await postJson<AiJob>("/ai/jobs/tts", {
+        idempotencyKey: `tts-${crypto.randomUUID()}`,
+        speed: 1,
+        text,
+        voiceId: "Sohee"
+      });
+      await refreshAiWorkbench();
+      setNotice("Sohee 한국어 음성 작업을 요청했습니다.");
+    } catch (error) {
+      setNotice(`TTS 요청 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsAiAction(false);
+    }
+  }
+
+  async function createAiAvatar(assetId: string) {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      await postJson<AiJob>("/ai/jobs/avatar", {
+        assetId,
+        consentToStoreSource: true,
+        idempotencyKey: `avatar-${crypto.randomUUID()}`,
+        style: "work-friendly"
+      });
+      await refreshAiWorkbench();
+      setNotice("선택한 사진으로 업무용 캐리커처 초안을 요청했습니다.");
+    } catch (error) {
+      setNotice(`캐리커처 요청 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsAiAction(false);
+    }
+  }
+
+  async function editAiTranscript(transcriptId: string, text: string) {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      await requestJson(`/ai/transcripts/${transcriptId}`, "PATCH", { text });
+      await refreshAiWorkbench();
+      setNotice("STT 초안을 저장했습니다.");
+    } catch (error) {
+      setNotice(`STT 초안 저장 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+      throw error;
+    } finally {
+      setIsAiAction(false);
+    }
+  }
+
+  async function sendAiTranscript(transcriptId: string) {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      const effectiveAudience = getEffectiveAudience();
+      const result = await postJson<{ message: Message }>(`/ai/transcripts/${transcriptId}/send`, {
+        audienceType: effectiveAudience.audienceType,
+        clientMessageId: `stt-message-${crypto.randomUUID()}`,
+        requiresConfirmation,
+        spaceId: activeSpaceId,
+        targetUserIds: effectiveAudience.targetUserIds
+      });
+      setMessages((current) => upsertMessage(current, result.message));
+      setSelectedMessageId(result.message.id);
+      await Promise.all([refreshAiWorkbench(), refreshSpaceList()]);
+      setNotice("검토한 STT 문장을 현재 대화 대상으로 전송했습니다.");
+    } catch (error) {
+      setNotice(`STT 전송 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+      throw error;
+    } finally {
+      setIsAiAction(false);
+    }
+  }
+
+  async function rejectAiTranscript(transcriptId: string) {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      await postJson(`/ai/transcripts/${transcriptId}/reject`, {});
+      await refreshAiWorkbench();
+      setNotice("STT 초안을 폐기했습니다.");
+    } finally {
+      setIsAiAction(false);
+    }
+  }
+
+  async function retryAiJob(jobId: string) {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      await postJson(`/ai/jobs/${jobId}/retry`, {});
+      await refreshAiWorkbench();
+      setNotice("AI 작업을 다시 대기열에 넣었습니다.");
+    } finally {
+      setIsAiAction(false);
+    }
+  }
+
+  async function cancelAiJob(jobId: string) {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      await postJson(`/ai/jobs/${jobId}/cancel`, {});
+      await refreshAiWorkbench();
+      setNotice("AI 작업을 취소했습니다.");
+    } finally {
+      setIsAiAction(false);
+    }
+  }
+
+  async function createAiVoiceProfile(assetId: string) {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      const consent = await postJson<{ id: string }>("/ai/voice-consents", {
+        acknowledged: true,
+        expiresInDays: 30,
+        referenceAssetId: assetId
+      });
+      await postJson("/ai/voice-profiles", {
+        consentId: consent.id,
+        idempotencyKey: `voice-profile-${crypto.randomUUID()}`
+      });
+      await refreshAiWorkbench();
+      setNotice("30일 목적 제한 동의와 함께 개인 음성 등록을 요청했습니다.");
+    } catch (error) {
+      setNotice(`개인 음성 등록 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`);
+    } finally {
+      setIsAiAction(false);
+    }
+  }
+
+  async function revokeAiVoiceProfile(profileId: string) {
+    if (isAiAction) return;
+    setIsAiAction(true);
+    try {
+      await requestJson(`/ai/voice-profiles/${profileId}`, "DELETE");
+      await refreshAiWorkbench();
+      setNotice("음성 동의를 철회하고 파생 정보 삭제를 요청했습니다.");
+    } finally {
+      setIsAiAction(false);
+    }
   }
 
   async function shareStoredAsset(asset: MediaAssetView) {
@@ -1869,10 +2090,10 @@ function ChatDesk({
             <button className="icon-button" disabled={isUploading} onClick={() => void shareScreenCapture()} title="화면 캡처" type="button">
               <Camera size={18} />
             </button>
-            <button className="icon-button" onClick={() => setNotice("STT 음성메시지는 AI 작업 대기열로 들어갑니다.")} title="STT" type="button">
+            <button className="icon-button" onClick={() => setActivePanel("ai")} title="STT 작업대" type="button">
               <Mic2 size={18} />
             </button>
-            <button className="icon-button" onClick={() => setNotice("TTS 읽어주기는 캐시된 음성 자산을 우선 사용합니다.")} title="TTS" type="button">
+            <button className="icon-button" onClick={() => setActivePanel("ai")} title="TTS 작업대" type="button">
               <Volume2 size={18} />
             </button>
             <button className="chip-button" data-active={requiresConfirmation} onClick={() => setRequiresConfirmation((current) => !current)} type="button">
@@ -1983,6 +2204,25 @@ function ChatDesk({
               selectedAssetId={selectedAssetId}
               uploadTask={uploadTask}
             />
+          ) : activePanel === "ai" ? (
+            <AiPanel
+              {...(selectedMediaAsset ? { activeAsset: selectedMediaAsset } : {})}
+              {...(aiCapabilities ? { capabilities: aiCapabilities } : {})}
+              isBusy={isAiAction || isUploading}
+              jobs={aiJobs}
+              onCancel={cancelAiJob}
+              onCreateAvatar={createAiAvatar}
+              onCreateSummary={createAiSummary}
+              onCreateTts={createAiTts}
+              onCreateVoiceProfile={createAiVoiceProfile}
+              onEditTranscript={editAiTranscript}
+              onRejectTranscript={rejectAiTranscript}
+              onRetry={retryAiJob}
+              onRevokeVoiceProfile={revokeAiVoiceProfile}
+              onSendTranscript={sendAiTranscript}
+              onVoiceFile={createSttFromVoice}
+              voiceProfiles={voiceProfiles}
+            />
           ) : (
             <PanelBody
             activePanel={activePanel}
@@ -2026,7 +2266,6 @@ function ChatDesk({
             selectedPdf={selectedPdf}
             sessions={sessions}
             users={roomUsers}
-            aiJobs={aiJobs}
             />
           )}
         </div>
@@ -2076,8 +2315,7 @@ function PanelBody({
   selectedMessage,
   selectedPdf,
   sessions,
-  users,
-  aiJobs
+  users
 }: {
   activePanel: PanelKey;
   acceptExistingGroupJoin: boolean;
@@ -2120,7 +2358,6 @@ function PanelBody({
   selectedPdf: Attachment | MediaAssetView | undefined;
   sessions: DeviceSessionView[];
   users: User[];
-  aiJobs: AiJob[];
 }) {
   if (activePanel === "reads") {
     if (!selectedMessage) {
@@ -2320,36 +2557,6 @@ function PanelBody({
           ))}
         </div>
         <div className="notice">{notice}</div>
-      </>
-    );
-  }
-
-  if (activePanel === "ai") {
-    return (
-      <>
-        <div className="panel-section">
-          <h2 className="panel-title">
-            <Sparkles size={17} /> AI 작업 대기열
-          </h2>
-          {aiJobs.map((job) => (
-            <div className="ai-row" key={job.id}>
-              {job.jobType === "tts" ? <Volume2 size={18} /> : job.jobType === "stt" ? <Mic2 size={18} /> : <Sparkles size={18} />}
-              <span>
-                <strong>{job.jobType.toUpperCase()}</strong>
-                <span className="tiny" style={{ display: "block" }}>
-                  {job.createdAt}
-                </span>
-              </span>
-              <span className="status-chip">{job.status}</span>
-            </div>
-          ))}
-        </div>
-        <div className="panel-section">
-          <h2 className="panel-title">
-            <LockKeyhole size={17} /> 민감 기능
-          </h2>
-          <p className="panel-muted">녹화, 원격제어, AI transcript export는 동의와 감사 로그가 붙은 뒤 활성화됩니다.</p>
-        </div>
       </>
     );
   }

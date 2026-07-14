@@ -113,14 +113,16 @@ Stage 7 exit evidence: fresh PostgreSQL plus the pinned official LiveKit server 
 
 ## Stage 8 - AI Voice, Summary, And Avatar
 
-1. Redis-backed AI job state and Python worker protocol.
-2. Silero VAD + faster-whisper STT draft/edit/send.
-3. Qwen 3.5+ summaries, decisions, and task extraction.
-4. Qwen3-TTS standard Korean voice with cache.
-5. Consented voice profile, watermark, revoke, and deletion.
-6. Photo-to-caricature assets, expression packs, then optional animated avatar.
+1. PostgreSQL source-of-truth AI jobs, optional opaque Redis wake-ups, and authenticated Python worker protocol. Complete.
+2. Silero VAD + faster-whisper STT draft/edit/send. Complete in the control plane and worker adapter.
+3. Qwen 3.5+ summaries, decisions, and task extraction. Complete in the control plane and OpenAI-compatible adapter.
+4. Qwen3-TTS standard Korean voice with cache. Complete with the Sohee adapter and generated-media path.
+5. Consented voice profile, watermark, revoke, and deletion. Complete with a fail-closed encrypted-vault adapter boundary.
+6. Photo-to-caricature request/assets and source-retention consent. Complete as a provider-neutral job boundary; expression packs and animated avatars remain a later product slice.
 
 Exit: AI failure never blocks chat; drafts are labeled; voice-profile use fails closed without current consent.
+
+Stage 8 exit evidence: a fresh PostgreSQL harness proves chat independence, authorization denial, idempotency conflicts, lease recovery and stale-worker fencing, STT review/send, visibility-scoped summary snapshots, Qwen version enforcement, private generated media, consent revoke/delete, retry/cancel, restart persistence, and audit. Installed Electron `0.15.0` proves STT editing and approval, summary and TTS result projection, responsive layout, screenshot capture, and complete Electron/API/web/embedded-PostgreSQL cleanup. Real model-quality and GPU-latency benchmarks remain an explicit deployment gate because model weights are not bundled or present in the test environment.
 
 ## Stage 9 - Remote Support
 
