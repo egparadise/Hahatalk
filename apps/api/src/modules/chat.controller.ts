@@ -31,6 +31,7 @@ import { CurrentAuth, PublicRoute } from "../auth/auth.decorators.js";
 import type { AuthPrincipal } from "../auth/auth.types.js";
 import { DatabaseService } from "../database/database.service.js";
 import { ConversationService } from "./conversation.service.js";
+import { LocalAssistantService } from "./local-assistant.service.js";
 
 class SendMessageDto {
   @IsUUID()
@@ -77,7 +78,8 @@ class EditMessageDto {
 export class ChatController {
   constructor(
     private readonly conversations: ConversationService,
-    private readonly database: DatabaseService
+    private readonly database: DatabaseService,
+    private readonly localAssistant: LocalAssistantService
   ) {}
 
   @PublicRoute()
@@ -127,7 +129,7 @@ export class ChatController {
   }
 
   @Post("messages")
-  sendMessage(@Body() body: SendMessageDto, @CurrentAuth() principal: AuthPrincipal) {
+  async sendMessage(@Body() body: SendMessageDto, @CurrentAuth() principal: AuthPrincipal) {
     const input: SendConversationMessageInput = {
       spaceId: body.spaceId,
       clientMessageId: body.clientMessageId,
@@ -138,7 +140,9 @@ export class ChatController {
       ...(body.parentMessageId ? { parentMessageId: body.parentMessageId } : {}),
       requiresConfirmation: body.requiresConfirmation
     };
-    return this.conversations.sendMessage(principal, input);
+    const result = await this.conversations.sendMessage(principal, input);
+    if (!result.replay) this.localAssistant.scheduleReply(principal, result.message.id);
+    return result;
   }
 
   @Patch("messages/:messageId")

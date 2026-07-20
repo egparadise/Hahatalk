@@ -45,7 +45,7 @@ function platform(): MobilePlatform {
 }
 
 function appVersion() {
-  return Application.nativeApplicationVersion ?? "0.18.0";
+  return Application.nativeApplicationVersion ?? "0.19.0";
 }
 
 async function responsePayload(response: Response) {

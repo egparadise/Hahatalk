@@ -207,7 +207,8 @@ try {
   const ownerSnapshot = await request(baseUrl, `/mvp?spaceId=${hubId}`, { cookie: owner.cookie });
   assert(ownerSnapshot.response.status === 200, "Owner persisted snapshot failed.");
   assert(ownerSnapshot.body.room.mode === "hub_owner", "Owner did not receive the hub console projection.");
-  assert(ownerSnapshot.body.spaces.length === 3, "Owner conversation list did not contain all seeded spaces.");
+  assert(ownerSnapshot.body.spaces.length === 4, "Owner conversation list did not contain the seeded spaces and local assistant.");
+  assert(ownerSnapshot.body.spaces.some((space) => space.room.assistant?.model === "Qwen3.5-4B"), "Owner conversation list omitted the local assistant.");
 
   const minaHub = await request(baseUrl, `/spaces/${hubId}/view`, { cookie: mina.cookie });
   assert(minaHub.response.status === 200, "Participant hub view failed.");

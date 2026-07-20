@@ -200,6 +200,10 @@ create table conversation_spaces (
   archived_at timestamptz
 );
 
+create unique index conversation_spaces_local_assistant_idx
+  on conversation_spaces (organization_id)
+  where archived_at is null and settings_json ->> 'assistantKind' = 'local_ollama';
+
 create table space_memberships (
   space_id uuid not null references conversation_spaces(id) on delete cascade,
   user_id uuid not null references users(id) on delete cascade,
@@ -988,7 +992,7 @@ create table ai_jobs (
   requested_by uuid not null references users(id) on delete cascade,
   model_config_id uuid not null references ai_model_configs(id),
   job_type text not null check (job_type in (
-    'stt', 'tts', 'summary', 'avatar_generation',
+    'assistant', 'stt', 'tts', 'summary', 'avatar_generation',
     'voice_profile_enrollment', 'voice_profile_delete'
   )),
   input_asset_id uuid references media_assets(id) on delete restrict,

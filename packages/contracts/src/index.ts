@@ -19,6 +19,7 @@ export type MessageType =
   | "sticker"
   | "remote_support";
 export type AiJobType =
+  | "assistant"
   | "stt"
   | "tts"
   | "summary"
@@ -163,6 +164,11 @@ export interface Room {
     readReportEnabled: boolean;
     fileSharingEnabled: boolean;
     publicAnnouncementsEnabled: boolean;
+    assistant?: {
+      local: boolean;
+      model: string;
+      provider: "ollama";
+    };
   };
   createdAt: string;
 }
@@ -187,6 +193,11 @@ export interface RoomPresentation {
   rosterVisible: boolean;
   canSelectAudience: boolean;
   publicAnnouncementsEnabled: boolean;
+  assistant?: {
+    local: boolean;
+    model: string;
+    provider: "ollama";
+  };
   memberCount?: number;
 }
 
@@ -317,6 +328,10 @@ export interface Message {
     source?: "manual" | "screen_capture" | "file_upload" | "ai_draft";
     aiDraft?: boolean;
     mediaVisibility?: "private_archive" | "shared" | "selected";
+    assistant?: boolean;
+    assistantError?: boolean;
+    aiJobId?: string;
+    model?: string;
   };
   createdAt: string;
   editedAt?: string;
@@ -1816,7 +1831,8 @@ export function getRoomPresentationForViewer(
       visibleMemberIds: roomMembers.map((member) => member.userId),
       rosterVisible: false,
       canSelectAudience: false,
-      publicAnnouncementsEnabled: false
+      publicAnnouncementsEnabled: false,
+      ...(room.settings.assistant ? { assistant: room.settings.assistant } : {})
     };
   }
 

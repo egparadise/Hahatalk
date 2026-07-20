@@ -56,7 +56,7 @@ const session = read("apps/mobile/src/lib/session-store.ts");
 const capabilities = read("apps/api/src/mobile/mobile.service.ts");
 const conversation = read("apps/api/src/modules/conversation.service.ts");
 
-assert(pkg.version === "0.18.0" && pkg.main === "expo-router/entry", "Mobile package identity or version is invalid.");
+assert(pkg.version === "0.19.0" && pkg.main === "expo-router/entry", "Mobile package identity or version is invalid.");
 assert(pkg.scripts?.["export:android"] && pkg.scripts?.["export:ios"], "Both native bundle export scripts are required.");
 assert(pkg.dependencies?.["expo-secure-store"] && pkg.dependencies?.["expo-sqlite"], "SecureStore and SQLite are required.");
 assert(config.includes("android.permission.RECORD_AUDIO") && config.includes("NSMicrophoneUsageDescription"), "Call microphone permission is missing.");

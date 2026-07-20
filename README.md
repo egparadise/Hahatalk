@@ -37,6 +37,7 @@ HahaTalk is a KakaoTalk-like messenger with direct chat, traditional open groups
 - Read report panel with read time, unread users, and confirmation state.
 - Pop-out window affordances for chat and document views.
 - PostgreSQL-backed AI jobs with lease, heartbeat, fencing, idempotency, retry/cancel, attempt history, and optional opaque Redis Streams wake-ups; chat never waits for a model or worker.
+- A private `HahaTalk AI` direct room backed by loopback-only Ollama and `qwen3.5:4b`; replies are queued asynchronously, labeled with model provenance, and never expose model thinking.
 - A Windows AI workbench for faster-whisper STT drafts, visibility-scoped Qwen 3.5+ summaries, Qwen3-TTS Sohee playback, consented voice profiles, and AI-labeled avatar assets.
 - Editable STT review and explicit one-time approval before a normal Smart Room message is sent, plus immediate voice-consent revoke and derivative deletion queues.
 - A Windows x64 package and Squirrel installer that include a managed PostgreSQL 18.4 runtime and start without Node.js, npm, Docker, or separate development servers.
@@ -70,6 +71,7 @@ npm run schema:check
 npm run auth:integration
 npm run invitation:integration
 npm run conversation:integration
+npm run assistant:integration
 npm run contacts:integration
 npm run media:integration
 npm run calendar:integration
@@ -104,6 +106,21 @@ npm run desktop:stage7-renderer-smoke
 npm run desktop:stage8-renderer-smoke
 npm run desktop:stage9-renderer-smoke
 npm run harness
+```
+
+## Windows Local AI Quick Start
+
+1. Install and start Ollama on the same Windows PC.
+2. Run `ollama pull qwen3.5:4b` once.
+3. Start HahaTalk and sign in with the existing owner account.
+4. Select `HahaTalk AI` in the conversation list and send a normal text message.
+
+The owner message is committed before model inference. The local assistant then reads a bounded visible history, calls `http://127.0.0.1:11434/api/chat` with thinking disabled, and posts a labeled reply through the normal message pipeline. Calls and file sharing are intentionally unavailable in this first AI room.
+
+To remove installed test conversations while preserving accounts, rooms, invitations, schedules, calls, private media originals, and audit history, run the explicit maintenance command only after reviewing its scope:
+
+```powershell
+npm run data:reset:installed -- --confirm=RESET_HAHATALK_TEST_DATA
 ```
 
 The web MVP runs at `http://127.0.0.1:3000`. The API fails closed when PostgreSQL is unavailable. `npm run infra:up` starts the shared PostgreSQL/Redis/object-storage development stack; the portable commands prepare PostgreSQL 18.4 and the checksum-pinned LiveKit 1.13.3 Windows test server under `%LOCALAPPDATA%\HahaTalkDev`. The LiveKit development server is loopback-only and is not an external deployment. Real users require configured `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` backed by trusted TLS and TURN. Recording additionally requires a separately deployed LiveKit Egress service, protected S3-compatible storage, and the `LIVEKIT_EGRESS_*` settings documented in `.env.example`; the Windows client does not bundle Egress. `infra/media` renders and validates this central-service boundary without committing credentials. Production LiveKit and storage credentials belong in a centrally managed API/secret manager, never in an end-user desktop installation or renderer.
@@ -158,4 +175,5 @@ The loop creates a timestamped Obsidian report, verifies the app with the harnes
 - `docs/stage-9-consented-remote-support.md`: Stage 9 attended support consent, command fencing, isolated agent process, emergency stop, and signed-native release gate.
 - `docs/stage-10-mobile-companion.md`: Stage 10 mobile auth, encrypted offline queue, generic push, Expo routes, media/calendar/broadcast/call surfaces, and native release gates.
 - `docs/stage-11-hardening-release.md`: Stage 11 durable abuse control, RLS, audit export, lifecycle policy, backup/restore, telemetry, load, release evidence, and rollback contract.
+- `docs/stage-12-local-ai-conversation.md`: Stage 12 private Ollama/Qwen conversation, asynchronous reply worker, clean installed-data reset, and verification contract.
 - `AGENTS.md`, `.agents/skills`, and `.codex`: persistent development direction, stage workflow, specialist agents, and lifecycle hooks.

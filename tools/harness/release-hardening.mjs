@@ -209,7 +209,7 @@ try {
 
   await expectStatus(baseUrl, "/ops/health/live", {}, 200);
   const readiness = await expectStatus(baseUrl, "/ops/health/ready", {}, 200);
-  assert(readiness.body.schema === "016_release_hardening_lifecycle_concurrency.sql", "Readiness did not report the latest hardening schema.");
+  assert(readiness.body.schema === "017_local_ai_conversation.sql", "Readiness did not report the latest schema.");
   await expectStatus(baseUrl, "/ops/metrics", {}, 401);
 
   for (let attempt = 1; attempt <= 9; attempt += 1) {
@@ -439,8 +439,8 @@ try {
       artifactSha256: digest,
       gitSha: "a7a952bc742a2c35c910189b71df511ec69b8c09",
       manifestSha256: digest,
-      schemaVersion: "016_release_hardening_lifecycle_concurrency.sql",
-      version: "0.18.0-rc.1"
+      schemaVersion: "017_local_ai_conversation.sql",
+      version: "0.19.0-rc.1"
     }
   }, 201);
   await expectStatus(baseUrl, `/ops/release-candidates/${candidate.body.id}/gates`, {
@@ -560,8 +560,8 @@ try {
       JSON.stringify(restoredInvariants) === JSON.stringify(sourceInvariants),
       `Restore invariants differ. source=${JSON.stringify(sourceInvariants)} restored=${JSON.stringify(restoredInvariants)}`
     );
-    const latest = await restored.query("select 1 from schema_migrations where version = '016_release_hardening_lifecycle_concurrency.sql'");
-    assert(latest.rowCount === 1, "Restored database is missing migration 016.");
+    const latest = await restored.query("select 1 from schema_migrations where version = '017_local_ai_conversation.sql'");
+    assert(latest.rowCount === 1, "Restored database is missing migration 017.");
   } finally {
     await restored.end();
   }

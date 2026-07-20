@@ -57,7 +57,8 @@ const artifactPaths = [
   "apps/desktop/out/HahaTalk-win32-x64/resources/app.asar",
   "apps/desktop/out/HahaTalk-win32-x64/resources/runtime/api.cjs",
   "apps/api/migrations/015_release_hardening.sql",
-  "apps/api/migrations/016_release_hardening_lifecycle_concurrency.sql"
+  "apps/api/migrations/016_release_hardening_lifecycle_concurrency.sql",
+  "apps/api/migrations/017_local_ai_conversation.sql"
 ];
 const artifacts = (await Promise.all(artifactPaths.map(hashFile))).filter(Boolean);
 const androidBundle = await firstBundle("android");
@@ -109,7 +110,7 @@ const manifest = {
   ],
   source: {
     repository: "https://github.com/egparadise/Hahatalk.git",
-    schemaVersion: "016_release_hardening_lifecycle_concurrency.sql"
+    schemaVersion: "017_local_ai_conversation.sql"
   },
   version: desktopPackage.version
 };

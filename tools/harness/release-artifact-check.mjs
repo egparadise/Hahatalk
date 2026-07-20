@@ -26,9 +26,10 @@ await run(process.execPath, ["tools/release/create-release-manifest.mjs", "--all
 const serialized = await readFile(output, "utf8");
 const manifest = JSON.parse(serialized);
 assert(manifest.format === "hahatalk-release-candidate-v1", "Release manifest format is invalid.");
-assert(manifest.source?.schemaVersion === "016_release_hardening_lifecycle_concurrency.sql", "Release manifest schema version is stale.");
+assert(manifest.source?.schemaVersion === "017_local_ai_conversation.sql", "Release manifest schema version is stale.");
 assert(Array.isArray(manifest.artifacts) && manifest.artifacts.some((item) => item.path === "apps/api/migrations/015_release_hardening.sql"), "Hardening migration artifact hash is missing.");
 assert(manifest.artifacts.some((item) => item.path === "apps/api/migrations/016_release_hardening_lifecycle_concurrency.sql"), "Lifecycle concurrency migration artifact hash is missing.");
+assert(manifest.artifacts.some((item) => item.path === "apps/api/migrations/017_local_ai_conversation.sql"), "Local assistant migration artifact hash is missing.");
 assert(manifest.externalGates.length === 6 && manifest.externalGates.every((gate) => gate.status === "pending_external"), "External gates must remain explicit and pending.");
 assert(manifest.requiredAutomatedGates.length === 8, "Automated release gates are incomplete.");
 for (const artifact of manifest.artifacts) {

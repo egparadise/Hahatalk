@@ -538,7 +538,9 @@ export class InvitationService {
     const result = await client.query<ApproverRow>(
       `select om.user_id as internal_user_id, om.role
        from organization_memberships om
+       left join profiles profile on profile.user_id = om.user_id
        where om.organization_id = $1 and om.status = 'active' and om.role <> 'guest'
+         and coalesce(profile.public_profile_json ->> 'accountKind', '') <> 'local_ai'
        order by case om.role when 'owner' then 0 when 'admin' then 1 else 2 end, om.created_at asc`,
       [organizationId]
     );

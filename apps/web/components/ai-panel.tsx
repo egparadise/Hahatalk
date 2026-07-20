@@ -39,6 +39,7 @@ type AiPanelProps = {
 };
 
 const jobLabels: Record<AiJob["jobType"], string> = {
+  assistant: "AI 대화",
   avatar_generation: "캐리커처",
   stt: "음성 받아쓰기",
   summary: "대화 요약",

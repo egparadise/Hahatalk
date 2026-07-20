@@ -3,6 +3,7 @@ import { AuthModule } from "../auth/auth.module.js";
 import { ChatController } from "./chat.controller.js";
 import { ChatGateway } from "./chat.gateway.js";
 import { ConversationService } from "./conversation.service.js";
+import { LocalAssistantService } from "./local-assistant.service.js";
 import { OutboxPublisherService } from "./outbox-publisher.service.js";
 import { RealtimeDeliveryService } from "./realtime-delivery.service.js";
 
@@ -11,6 +12,7 @@ import { RealtimeDeliveryService } from "./realtime-delivery.service.js";
   controllers: [ChatController],
   providers: [
     ConversationService,
+    LocalAssistantService,
     RealtimeDeliveryService,
     OutboxPublisherService,
     ChatGateway

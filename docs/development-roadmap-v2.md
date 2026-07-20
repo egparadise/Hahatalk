@@ -156,6 +156,17 @@ Exit: release candidate passes automated, manual, security, privacy, performance
 
 Current evidence (2026-07-14): the local 0.18.0 release-candidate control plane, durable throttling, forced-RLS operations tables, redacted audit export, legal-hold lifecycle, release/rollback records, real isolated backup restore, bounded load/reconnect, manifest, SBOM, and Windows build loop are implemented. GA remains blocked by the explicitly recorded signing, physical-device, production-infrastructure, legal-policy, and real-Egress external gates.
 
+## Stage 12 - Local AI Conversation And Clean Test Workspace
+
+1. A non-authenticating `HahaTalk AI` system member and private owner direct room. Complete for Windows.
+2. Loopback-only Ollama with `qwen3.5:4b`, thinking disabled, bounded visible history, and explicit model provenance. Complete.
+3. Asynchronous database-backed assistant jobs so model latency never blocks normal message persistence. Complete.
+4. Retry with a visible final connection error, sequential reply ordering, lease fencing, and restart recovery. Complete.
+5. Explicit installed-data reset that removes test conversation rows while preserving accounts, rooms, schedules, calls, private media originals, and count-only audit evidence. Complete.
+6. Clean first-run UX, account/profile settings, richer assistant tools, and multi-user AI-room policy. Follow-up work.
+
+Exit evidence (2026-07-20): fresh-database assistant tests prove two-member projection, sub-500ms send return, identifier-only queued input, realtime typing/reply, replay idempotency, retry/failure visibility, Qwen selection, and thinking suppression. The full Stage 0-12 harness passes. Installed Windows 0.19.0 uses the real local `qwen3.5:4b` model, returns a labeled reply, clears the verification exchange, and finishes with zero messages, deliveries, attachments, and conversation-bound AI jobs while the assistant room remains available.
+
 ## Standard Stage Loop
 
 ```text

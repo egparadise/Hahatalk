@@ -73,7 +73,7 @@ export default function SettingsScreen() {
           <Smartphone color={colors.blue} size={20} />
           <View style={styles.settingCopy}>
             <Text style={styles.settingName}>{devices.find((device) => device.current)?.platform === "ios" ? "iPhone / iPad" : "Android"}</Text>
-            <Text style={typography.caption}>{devices.find((device) => device.current)?.appVersion ?? "0.18.0"}</Text>
+            <Text style={typography.caption}>{devices.find((device) => device.current)?.appVersion ?? "0.19.0"}</Text>
           </View>
           <CheckCircle2 color={colors.teal} size={20} />
         </View>

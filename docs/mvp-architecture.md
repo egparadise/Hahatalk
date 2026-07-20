@@ -12,7 +12,7 @@
 - Object storage provider: the packaged Windows baseline uses a private per-user filesystem root; managed deployments will use the same contract with S3-compatible storage. The pinned MinIO image is local-development-only.
 - LiveKit: voice, video, screen sharing, webinar, and broadcast media.
 - Central media deployment: trusted LiveKit signaling/TURN, one authenticated Redis boundary shared with separately isolated Egress workers, and private S3-compatible recording storage. Generated credentials stay outside Git and desktop packages.
-- Python workers: Whisper-compatible STT, Qwen 3.5+ assistant jobs, Qwen3-TTS, summaries, and avatar processing.
+- AI workers: loopback Ollama Qwen 3.5 text conversation plus Python Whisper-compatible STT, Qwen3-TTS, summaries, and avatar processing.
 - Remote support control plane: HahaTalk consent/audit orchestration with a separately sandboxed Windows support agent.
 
 ## Conversation Products

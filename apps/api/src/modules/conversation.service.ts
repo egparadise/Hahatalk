@@ -38,6 +38,19 @@ import { defaultHubSpaceId } from "./conversation.constants.js";
 const defaultPageSize = 40;
 const maxPageSize = 100;
 
+function parseAssistantSettings(value: unknown): Room["settings"]["assistant"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.provider !== "ollama" || typeof candidate.model !== "string" || !candidate.model.trim()) {
+    return undefined;
+  }
+  return {
+    local: candidate.local === true,
+    model: candidate.model.trim().slice(0, 120),
+    provider: "ollama"
+  };
+}
+
 type SpaceMemberRow = {
   character_id: string | null;
   created_at: Date;
@@ -1034,6 +1047,7 @@ export class ConversationService {
       throw new NotFoundException("Conversation owner membership is missing.");
     }
     const settings = first.settings_json ?? {};
+    const assistant = parseAssistantSettings(settings.assistant);
     const room: Room = {
       createdAt: first.space_created_at.toISOString(),
       id: first.space_id,
@@ -1045,7 +1059,8 @@ export class ConversationService {
         guestCanDownload: settings.guestCanDownload === true,
         publicAnnouncementsEnabled: settings.publicAnnouncementsEnabled === true,
         readReportEnabled: settings.readReportEnabled !== false,
-        rosterVisibility: first.roster_visibility
+        rosterVisibility: first.roster_visibility,
+        ...(assistant ? { assistant } : {})
       },
       type: first.space_type
     };

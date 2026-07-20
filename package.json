@@ -51,6 +51,8 @@
     "release:manifest": "node tools/release/create-release-manifest.mjs",
     "release:sbom": "node tools/release/create-sbom.mjs",
     "release:quality": "npm run typecheck && npm run test && npm run schema:check && npm run build && npm run release:artifact-check && npm run release:integration && npm run release:load",
+    "assistant:integration": "node tools/harness/local-assistant-chat.mjs",
+    "data:reset:installed": "node tools/maintenance/reset-installed-test-data.mjs",
     "screen-share:integration": "npm run calls:integration && npm run meetings:integration",
     "recording:integration": "npm run calls:integration && npm run meetings:integration",
     "desktop:stage6d-renderer-smoke": "npm run desktop:call-renderer-smoke && npm run desktop:meeting-renderer-smoke",

@@ -353,6 +353,18 @@ try {
   });
   assert(lateDecision.response.status === 409, "Late rejection changed a completed quorum.");
 
+  const allMembersInvite = await createInvitation(baseUrl, webOrigin, ownerCookie, {
+    approvalPolicy: "all_members_and_invitee",
+    email: `all-members-${randomUUID().slice(0, 8)}@example.test`,
+    role: "guest"
+  });
+  const assistantRequirement = await database.query(
+    `select 1 from invitation_approval_requirements
+     where invitation_id = $1 and approver_id = '00000000-0000-4000-8000-000000000105'`,
+    [allMembersInvite.id]
+  );
+  assert(!assistantRequirement.rowCount, "Local AI system account became an invitation approver.");
+
   const revokedInvite = await createInvitation(baseUrl, webOrigin, ownerCookie, {
     email: `revoked-${randomUUID().slice(0, 8)}@example.test`,
     role: "guest"

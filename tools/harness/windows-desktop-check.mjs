@@ -76,6 +76,7 @@ if (requireRuntime) {
     path.join(desktopRoot, "runtime", "migrations", "014_mobile_companion.sql"),
     path.join(desktopRoot, "runtime", "migrations", "015_release_hardening.sql"),
     path.join(desktopRoot, "runtime", "migrations", "016_release_hardening_lifecycle_concurrency.sql"),
+    path.join(desktopRoot, "runtime", "migrations", "017_local_ai_conversation.sql"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "initdb.exe"),
     path.join(desktopRoot, "runtime", "postgres", "bin", "pg_ctl.exe"),
     path.join(desktopRoot, "runtime", "postgres", "server_license.txt"),

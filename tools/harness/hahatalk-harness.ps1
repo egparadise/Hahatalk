@@ -27,6 +27,7 @@ $required = @(
   "apps/api/migrations/014_mobile_companion.sql",
   "apps/api/migrations/015_release_hardening.sql",
   "apps/api/migrations/016_release_hardening_lifecycle_concurrency.sql",
+  "apps/api/migrations/017_local_ai_conversation.sql",
   "apps/mobile/app.config.ts",
   "apps/mobile/src/lib/offline-queue.ts",
   "apps/desktop/main.cjs",
@@ -84,6 +85,7 @@ if ($env:OS -eq "Windows_NT" -and [string]::IsNullOrWhiteSpace($env:DATABASE_URL
 Invoke-CheckedCommand -Command @("npm", "run", "auth:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "invitation:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "conversation:integration")
+Invoke-CheckedCommand -Command @("npm", "run", "assistant:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "contacts:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "media:integration")
 Invoke-CheckedCommand -Command @("npm", "run", "calendar:integration")

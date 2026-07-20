@@ -1035,6 +1035,9 @@ export class AiService {
   }
 
   private async applyWorkerResult(client: PoolClient, job: WorkerLease, result: Record<string, unknown>) {
+    if (job.job_type === "assistant") {
+      throw new BadRequestException("Embedded assistant jobs cannot be completed by external workers.");
+    }
     if (job.job_type === "stt") {
       const text = safeString(result.text, "STT result");
       const language = safeString(result.language ?? job.input_json.language ?? "ko", "STT language", 24);

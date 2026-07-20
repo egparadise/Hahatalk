@@ -172,7 +172,7 @@ export class OperationsController {
   async ready() {
     const health = await this.database.health();
     const migration = await this.database.query<{ present: boolean }>(
-      "select exists(select 1 from schema_migrations where version = '016_release_hardening_lifecycle_concurrency.sql') as present"
+      "select exists(select 1 from schema_migrations where version = '017_local_ai_conversation.sql') as present"
     );
     if (!migration.rows[0]?.present) throw new ServiceUnavailableException("Required schema is not installed.");
     const role = await this.database.query<{ rolbypassrls: boolean; rolsuper: boolean }>(
@@ -190,7 +190,7 @@ export class OperationsController {
         status: "up"
       },
       ok: true,
-      schema: "016_release_hardening_lifecycle_concurrency.sql",
+      schema: "017_local_ai_conversation.sql",
       status: "ready"
     };
   }

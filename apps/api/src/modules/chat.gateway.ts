@@ -14,6 +14,7 @@ import { AuthService } from "../auth/auth.service.js";
 import type { AuthPrincipal } from "../auth/auth.types.js";
 import { PostgresThrottlerStorage } from "../security/postgres-throttler-storage.js";
 import { ConversationService } from "./conversation.service.js";
+import { LocalAssistantService } from "./local-assistant.service.js";
 import { RealtimeDeliveryService } from "./realtime-delivery.service.js";
 
 interface JoinRoomEvent {
@@ -55,7 +56,8 @@ export class ChatGateway implements OnGatewayInit {
     private readonly conversations: ConversationService,
     private readonly authService: AuthService,
     private readonly realtime: RealtimeDeliveryService,
-    private readonly rateLimits: PostgresThrottlerStorage
+    private readonly rateLimits: PostgresThrottlerStorage,
+    private readonly localAssistant: LocalAssistantService
   ) {}
 
   afterInit(server: Server) {
@@ -118,7 +120,9 @@ export class ChatGateway implements OnGatewayInit {
         ...(body.parentMessageId ? { parentMessageId: body.parentMessageId } : {}),
         ...(body.requiresConfirmation !== undefined ? { requiresConfirmation: body.requiresConfirmation } : {})
       };
-      return await this.conversations.sendMessage(principal, input);
+      const result = await this.conversations.sendMessage(principal, input);
+      if (!result.replay) this.localAssistant.scheduleReply(principal, result.message.id);
+      return result;
     } catch (error) {
       throw this.websocketError(error);
     }

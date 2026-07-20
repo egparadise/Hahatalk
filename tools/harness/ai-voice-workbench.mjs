@@ -339,6 +339,16 @@ try {
   });
   assert(editAfterSend.response.status === 409, "Reviewed transcript remained editable.");
 
+  const visibleSummaryMarker = `VISIBLE_SUMMARY_INPUT_${randomUUID()}`;
+  const visible = await mutate(baseUrl, origin, owner.cookie, "/messages", {
+    audienceType: "all",
+    body: visibleSummaryMarker,
+    clientMessageId: `stage8-visible-${randomUUID()}`,
+    requiresConfirmation: false,
+    spaceId: groupId,
+    targetUserIds: []
+  });
+  assert(visible.message.body === visibleSummaryMarker, "Visible summary fixture was not created.");
   const hidden = await mutate(baseUrl, origin, owner.cookie, "/messages", {
     audienceType: "private",
     body: "MINA_MUST_NOT_SEE_THIS_PRIVATE_SUMMARY_INPUT",
@@ -354,6 +364,7 @@ try {
   });
   const summaryClaim = await claim(baseUrl, "stage8-worker-b", ["summary"]);
   assert(summaryClaim.id === summary.id, "Summary worker claimed the wrong job.");
+  assert(JSON.stringify(summaryClaim.input).includes(visibleSummaryMarker), "Summary snapshot omitted a visible message.");
   assert(!JSON.stringify(summaryClaim.input).includes("MINA_MUST_NOT_SEE"), "Summary snapshot included a message invisible to its requester.");
   await workerRequest(baseUrl, `/internal/ai/jobs/${summary.id}/complete`, {
     fencingToken: summaryClaim.fencingToken,

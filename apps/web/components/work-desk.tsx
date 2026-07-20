@@ -122,8 +122,8 @@ export function WorkDesk() {
   const [isRestoringAuth, setIsRestoringAuth] = useState(true);
   const [authError, setAuthError] = useState("");
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
-  const [displayName, setDisplayName] = useState("이과장");
-  const [email, setEmail] = useState("you@inviz.co.kr");
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [selectedCharacterId, setSelectedCharacterId] = useState(characterPresets[0]?.id ?? "");
   const [initialInviteCode, setInitialInviteCode] = useState("");
@@ -897,6 +897,7 @@ function ChatDesk({
   const currentLiveCall = calls.find((call) => (
     call.spaceId === activeSpaceId && ["starting", "ringing", "active"].includes(call.status)
   ));
+  const isAssistantRoom = Boolean(roomPresentation.assistant);
 
   const targetUsers = roomUsers.filter((user) => user.id !== currentUser.id);
   const currentRoomMembership = roomMembers.find((member) => member.userId === currentUser.id);
@@ -2014,7 +2015,7 @@ function ChatDesk({
               type="button"
             >
               <span className="room-item-title">
-                <strong>{space.room.title}</strong>
+                <strong>{space.room.assistant ? <Sparkles aria-hidden="true" size={15} /> : null}{space.room.title}</strong>
                 {space.unreadCount > 0 ? <span className="unread-badge">{space.unreadCount}</span> : null}
               </span>
               <span className="room-meta">{space.lastMessagePreview ?? "대화를 시작하세요"}</span>
@@ -2029,7 +2030,11 @@ function ChatDesk({
           <div>
             <h1 className="room-title">{roomPresentation.title}</h1>
             <div className="tiny">
-              {roomPresentation.rosterVisible ? `허브 ${roomPresentation.memberCount ?? roomUsers.length}명` : "1:1 대화"}
+              {roomPresentation.assistant
+                ? `로컬 AI · ${roomPresentation.assistant.model}`
+                : roomPresentation.rosterVisible
+                  ? `허브 ${roomPresentation.memberCount ?? roomUsers.length}명`
+                  : "1:1 대화"}
               {` · ${currentUser.displayName} · ${authSession.role === "guest" ? "게스트 세션" : "내부 세션"}`}
               {authSession.permissions.canOpenReadReport ? " · 읽음 리포트 켜짐" : ""}
             </div>
@@ -2044,26 +2049,30 @@ function ChatDesk({
             <button className="icon-button" onClick={() => void refreshSnapshot()} title="업무방 새로고침" type="button">
               <RefreshCw size={18} />
             </button>
-            <button
-              className="icon-button"
-              data-active={Boolean(currentLiveCall)}
-              disabled={isCallAction || (!callCapabilities.available && !currentLiveCall)}
-              onClick={() => void startOrOpenCall("voice")}
-              title={callCapabilities.available ? "음성 통화" : callCapabilities.reason ?? "통화 서버 설정 필요"}
-              type="button"
-            >
-              <Phone size={18} />
-            </button>
-            <button
-              className="icon-button"
-              data-active={Boolean(currentLiveCall)}
-              disabled={isCallAction || (!callCapabilities.available && !currentLiveCall)}
-              onClick={() => void startOrOpenCall("video")}
-              title={callCapabilities.available ? "영상 통화" : callCapabilities.reason ?? "통화 서버 설정 필요"}
-              type="button"
-            >
-              <Video size={18} />
-            </button>
+            {!isAssistantRoom ? (
+              <>
+                <button
+                  className="icon-button"
+                  data-active={Boolean(currentLiveCall)}
+                  disabled={isCallAction || (!callCapabilities.available && !currentLiveCall)}
+                  onClick={() => void startOrOpenCall("voice")}
+                  title={callCapabilities.available ? "음성 통화" : callCapabilities.reason ?? "통화 서버 설정 필요"}
+                  type="button"
+                >
+                  <Phone size={18} />
+                </button>
+                <button
+                  className="icon-button"
+                  data-active={Boolean(currentLiveCall)}
+                  disabled={isCallAction || (!callCapabilities.available && !currentLiveCall)}
+                  onClick={() => void startOrOpenCall("video")}
+                  title={callCapabilities.available ? "영상 통화" : callCapabilities.reason ?? "통화 서버 설정 필요"}
+                  type="button"
+                >
+                  <Video size={18} />
+                </button>
+              </>
+            ) : null}
             <button className="icon-button" onClick={popOut} title="개별 창 열기" type="button">
               <PanelRightOpen size={18} />
             </button>
@@ -2129,6 +2138,9 @@ function ChatDesk({
                     {message.editedAt ? <span>수정됨</span> : null}
                     <span className="audience-chip">{getAudienceLabel(message, roomUsers)}</span>
                     {message.metadata.requiresConfirmation ? <span className="status-chip">확인 요청</span> : null}
+                    {message.metadata.assistant ? (
+                      <span className="status-chip">{message.metadata.assistantError ? "AI 연결 오류" : "AI 생성"}</span>
+                    ) : null}
                   </div>
                   {parentMessage ? (
                     <button className="reply-reference" onClick={() => setSelectedMessageId(parentMessage.id)} type="button">
@@ -2274,7 +2286,7 @@ function ChatDesk({
                   void sendTextMessage();
                 }
               }}
-              placeholder="메시지 입력"
+              placeholder={isAssistantRoom ? "HahaTalk AI에게 메시지 입력" : "메시지 입력"}
               ref={composerRef}
               value={composer}
             />

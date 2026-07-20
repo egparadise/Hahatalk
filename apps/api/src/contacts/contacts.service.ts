@@ -768,6 +768,7 @@ export class ContactsService {
        where membership.organization_id = $1
          and membership.status = 'active'
          and membership.user_id <> $2
+         and coalesce(profile.public_profile_json ->> 'accountKind', '') <> 'local_ai'
        order by member_user.display_name, member_user.email`,
       [organizationId, viewerId]
     );
@@ -789,7 +790,8 @@ export class ContactsService {
         and membership.organization_id = $1
         and membership.status = 'active'
        left join profiles profile on profile.user_id = member_user.id
-       where member_user.public_id = $2 and member_user.status = 'active'`,
+       where member_user.public_id = $2 and member_user.status = 'active'
+         and coalesce(profile.public_profile_json ->> 'accountKind', '') <> 'local_ai'`,
       [organizationId, publicUserId]
     );
     if (!result.rows[0]) {
